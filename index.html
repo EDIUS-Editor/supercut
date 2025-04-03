@@ -66,7 +66,30 @@
 
     <!-- Load ffmpeg.wasm -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js"></script>
-    <!-- Load application logic -->
+    
+    <!-- Add this small script to ensure FFmpeg is loaded before your main script -->
+    <script>
+        // Check if FFmpeg loaded correctly
+        window.addEventListener('load', function() {
+            console.log("Window loaded, FFmpeg object:", typeof FFmpeg);
+            if (typeof FFmpeg === 'undefined') {
+                console.error("FFmpeg failed to load properly. Trying alternative CDN...");
+                // Create a fallback script element
+                var fallbackScript = document.createElement('script');
+                fallbackScript.src = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js";
+                fallbackScript.onload = function() {
+                    console.log("Fallback FFmpeg loaded!");
+                    // Now load your script
+                    var mainScript = document.createElement('script');
+                    mainScript.src = "script.js";
+                    document.body.appendChild(mainScript);
+                };
+                document.body.appendChild(fallbackScript);
+            }
+        });
+    </script>
+    
+    <!-- Load your script with defer attribute -->
     <script src="script.js" defer></script>
 </body>
 </html>
