@@ -1,0 +1,164 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+.container {
+    max-width: 800px;
+    margin: auto;
+    background: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.description {
+    text-align: center;
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 30px;
+}
+
+.input-group {
+    margin-bottom: 20px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.input-group input[type="file"],
+.input-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box; /* Include padding in width */
+}
+
+.input-group small {
+    display: block;
+    font-size: 0.8em;
+    color: #777;
+    margin-top: 5px;
+}
+.input-group a {
+    font-size: 0.8em;
+    margin-left: 10px;
+}
+
+
+.radio-group label {
+    display: inline-block;
+    margin-right: 15px;
+    font-weight: normal;
+}
+.radio-group input[type="radio"] {
+    margin-right: 5px;
+}
+
+
+button {
+    display: block;
+    width: 100%;
+    padding: 12px 20px;
+    background-color: #5cb85c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: background-color 0.3s ease;
+}
+
+button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+button:not(:disabled):hover {
+    background-color: #4cae4c;
+}
+
+#status {
+    margin-top: 25px;
+    padding: 15px;
+    background-color: #e9e9e9;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+#status p {
+    margin: 0 0 10px 0;
+    font-weight: bold;
+}
+
+#progressBar {
+    margin-top: 10px;
+}
+
+#downloadArea a {
+    display: inline-block;
+    margin-top: 10px;
+    margin-right: 15px;
+    padding: 10px 15px;
+    background-color: #337ab7;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+#downloadArea a:hover {
+    background-color: #286090;
+}
+
+.log-box {
+    margin-top: 20px;
+    border: 1px solid #ccc;
+    background-color: #f8f8f8;
+    padding: 10px;
+    border-radius: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 0.8em;
+}
+
+.log-box h2 {
+    margin-top: 0;
+    font-size: 1.1em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.log-box pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+    font-family: monospace;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .container {
+        padding: 20px;
+    }
+    h1 {
+        font-size: 1.5em;
+    }
+    button {
+        font-size: 1em;
+    }
+}
