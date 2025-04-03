@@ -1,788 +1,498 @@
-// --- script.js --- More compatible version for GitHub Pages
+const { createFFmpeg, fetchFile } = FFmpeg; // Use FFmpeg directly if loaded via <script>
 
-// This version uses a more compatible approach to loading FFmpeg.wasm
-// which should work better on GitHub Pages and similar hosting platforms
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM loaded. Checking FFmpeg...");
-    
-    // Check if FFmpeg is available
-    if (typeof FFmpeg === 'undefined' || !FFmpeg.createFFmpeg) {
-        console.error("CRITICAL: FFmpeg global object or createFFmpeg not defined. Check script tag in index.html.");
-        // Display a user-friendly error on the page
-        const statusDiv = document.getElementById('status')?.querySelector('p');
-        if (statusDiv) {
-            statusDiv.textContent = 'Error: Failed to load core video library. Please reload.';
-            statusDiv.style.color = 'red';
+// --- DOM Elements ---
+const videoFileInput = document.getElementById('videoFile');
+const jsonFileInput = document.getElementById('jsonFile');
+const subtitleFileInput = document.getElementById('subtitleFile');
+const modeKeepRadio = document.getElementById('modeKeep');
+const processButton = document.getElementById('processButton');
+const statusDiv = document.getElementById('status').querySelector('p');
+const progressBar = document.getElementById('progressBar');
+const downloadArea = document.getElementById('downloadArea');
+const ffmpegLogPre = document.getElementById('ffmpeg-log').querySelector('pre');
+
+// --- State ---
+let ffmpeg = null;
+let videoFile = null;
+let editData = null;
+let subtitleFile = null;
+let isFFmpegLoaded = false;
+let isProcessing = false;
+
+// --- FFmpeg Setup ---
+async function loadFFmpeg() {
+    statusDiv.textContent = 'Loading FFmpeg core (~30MB)... Please wait.';
+    try {
+        ffmpeg = createFFmpeg({
+            // log: true, // Enable basic logging to console
+            logger: ({ type, message }) => { // Capture detailed logs
+                // Filter out progress messages from detailed log view
+                if (type !== 'fferr' || !message.includes('frame=') ) {
+                     ffmpegLogPre.textContent += message + '\n';
+                     ffmpegLogPre.scrollTop = ffmpegLogPre.scrollHeight; // Auto-scroll
+                }
+            },
+            progress: ({ ratio }) => {
+                if (ratio >= 0 && ratio <= 1) {
+                    progressBar.style.display = 'block';
+                    progressBar.value = ratio * 100;
+                    statusDiv.textContent = `Processing: ${(ratio * 100).toFixed(1)}%`;
+                     // Update overall progress if multi-stage
+                    updateOverallProgress(ratio);
+                } else {
+                     // Hide progress bar if ratio is invalid (e.g., during setup)
+                     // progressBar.style.display = 'none';
+                }
+            },
+             corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js', // Specify core path
+        });
+        await ffmpeg.load();
+        isFFmpegLoaded = true;
+        statusDiv.textContent = 'FFmpeg loaded. Ready for files.';
+        updateButtonState();
+    } catch (error) {
+        console.error("FFmpeg loading error:", error);
+        statusDiv.textContent = 'Error loading FFmpeg. Check console/network tab.';
+        alert(`Failed to load FFmpeg: ${error}. Try reloading the page or check browser compatibility (requires Wasm support).`);
+    }
+}
+
+// --- File Handling ---
+videoFileInput.addEventListener('change', (e) => {
+    videoFile = e.target.files[0];
+    statusDiv.textContent = 'Video file selected.';
+    updateButtonState();
+});
+
+jsonFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+        const text = await file.text();
+        editData = JSON.parse(text);
+        // Basic validation
+        if (!editData.clips || !Array.isArray(editData.clips) || !editData.video?.media?.video?.duration || !editData.video?.media?.video?.timecode?.rate?.timebase) {
+            throw new Error("Invalid JSON format. Missing required fields (clips, duration, timebase).");
         }
-        // Disable further interaction
-        const processButton = document.getElementById('processButton');
-        if (processButton) {
-            processButton.disabled = true;
-            processButton.textContent = 'Load Error';
-        }
-    } else {
-        console.log("FFmpeg global object found. Initializing application...");
-        initializeApp();
+        statusDiv.textContent = 'JSON file loaded and parsed.';
+        updateButtonState();
+    } catch (error) {
+        console.error("JSON parsing error:", error);
+        statusDiv.textContent = `Error reading JSON: ${error.message}`;
+        editData = null;
+        alert(`Error processing JSON file: ${error.message}`);
     }
 });
 
-function initializeApp() {
-    const { createFFmpeg, fetchFile } = FFmpeg;
+subtitleFileInput.addEventListener('change', (e) => {
+    subtitleFile = e.target.files[0];
+    statusDiv.textContent = 'Subtitle file selected.';
+    // No button state change needed for optional file
+});
 
-    // --- DOM Elements ---
-    const videoFileInput = document.getElementById('videoFile');
-    const jsonFileInput = document.getElementById('jsonFile');
-    const subtitleFileInput = document.getElementById('subtitleFile');
-    const modeKeepRadio = document.getElementById('modeKeep');
-    const processButton = document.getElementById('processButton');
-    const statusDiv = document.getElementById('status').querySelector('p');
-    const progressBar = document.getElementById('progressBar');
-    const downloadArea = document.getElementById('downloadArea');
-    const ffmpegLogPre = document.getElementById('ffmpeg-log').querySelector('pre');
-
-    // --- State ---
-    let ffmpeg = null;
-    let videoFile = null;
-    let editData = null;
-    let subtitleFile = null;
-    let isFFmpegLoaded = false;
-    let isProcessing = false;
-
-    // --- FFmpeg Setup with more compatible loading method ---
-    async function loadFFmpeg() {
-        statusDiv.textContent = 'Loading FFmpeg core... Please wait.';
-        ffmpegLogPre.textContent = 'Initializing FFmpeg...\n';
-        try {
-            // Create FFmpeg instance without specifying corePath
-            // Let FFmpeg figure out the optimal core path automatically
-            ffmpeg = createFFmpeg({
-                log: true,
-                logger: ({ message }) => {
-                    if (!message.includes('frame=')) {
-                        ffmpegLogPre.textContent += message + '\n';
-                        requestAnimationFrame(() => {
-                            ffmpegLogPre.scrollTop = ffmpegLogPre.scrollHeight;
-                        });
-                    }
-                },
-                progress: ({ ratio }) => {
-                    if (isFinite(ratio) && ratio >= 0 && ratio <= 1) {
-                        progressBar.style.display = 'block';
-                        progressBar.value = ratio * 100;
-                        if (typeof window.updateOverallProgress === 'function') {
-                            updateOverallProgress(ratio);
-                        } else {
-                            statusDiv.textContent = `Processing: ${(ratio * 100).toFixed(1)}%`;
-                        }
-                    }
-                },
-            });
-
-            ffmpegLogPre.textContent += 'Starting FFmpeg load (this may take a moment)...\n';
-            
-            // Load FFmpeg - this step might take time and could fail on GitHub Pages
-            await ffmpeg.load();
-            
-            isFFmpegLoaded = true;
-            statusDiv.textContent = 'FFmpeg loaded. Ready for files.';
-            ffmpegLogPre.textContent += 'FFmpeg core loaded successfully.\n';
-            updateButtonState();
-        } catch (error) {
-            console.error("FFmpeg loading error:", error);
-            statusDiv.textContent = 'Error loading FFmpeg. See details below.';
-            ffmpegLogPre.textContent += `Error loading FFmpeg: ${error}\n`;
-            ffmpegLogPre.textContent += 'This is likely due to CORS restrictions on GitHub Pages.\n';
-            ffmpegLogPre.textContent += 'Try using this app on a platform like Netlify or Vercel, or run it locally.\n';
-            alert(`Failed to load FFmpeg. GitHub Pages has CORS restrictions that prevent FFmpeg.wasm from working correctly. Try hosting on Netlify/Vercel or running locally with a proper server.`);
-            isFFmpegLoaded = false;
-            updateButtonState();
-        }
+// --- UI Updates ---
+function updateButtonState() {
+    if (isFFmpegLoaded && videoFile && editData && !isProcessing) {
+        processButton.disabled = false;
+        processButton.textContent = 'Process Video';
+    } else if (isProcessing) {
+         processButton.disabled = true;
+         processButton.textContent = 'Processing...';
     }
-
-    // --- File Handling ---
-    videoFileInput.addEventListener('change', (e) => {
-        console.log('Video file input changed.');
-        videoFile = e.target.files[0];
-        if (videoFile) {
-            console.log('Video file assigned:', videoFile.name);
-            statusDiv.textContent = `Video: ${videoFile.name}`;
-        } else {
-            console.log('No video file selected.');
-            statusDiv.textContent = 'Waiting for files...';
-            videoFile = null;
-        }
-        updateButtonState();
-    });
-
-    jsonFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        console.log('JSON file input changed.');
-        editData = null; // Reset edit data first
-        if (!file) {
-            console.log('No JSON file selected.');
-            updateButtonState();
-            return;
-        }
-        try {
-            console.log('Reading JSON file text:', file.name);
-            const text = await file.text();
-            console.log('Parsing JSON text...');
-            editData = JSON.parse(text);
-            console.log('JSON parsed successfully.');
-
-            // Basic validation
-            if (!editData.clips || !Array.isArray(editData.clips) || 
-                !editData.video?.media?.video?.duration || 
-                !editData.video?.media?.video?.timecode?.rate?.timebase) {
-                throw new Error("Invalid JSON format. Missing required fields (clips array, video.media.video.duration, video.media.video.timecode.rate.timebase).");
-            }
-            console.log('JSON validation passed.');
-            // Adjust status text based on whether video is also loaded
-            statusDiv.textContent = videoFile ? 'Video & JSON loaded.' : 'JSON loaded. Upload Video.';
-            updateButtonState();
-        } catch (error) {
-            console.error("JSON processing error in listener:", error);
-            statusDiv.textContent = `Error reading JSON: ${error.message}`;
-            editData = null;
-            alert(`Error processing JSON file: ${error.message}. Please check the file content and structure.`);
-            updateButtonState();
-        }
-    });
-
-    subtitleFileInput.addEventListener('change', (e) => {
-        console.log('Subtitle file input changed.');
-        subtitleFile = e.target.files[0];
-        if (subtitleFile) {
-            console.log('Subtitle file assigned:', subtitleFile.name);
-            // Adjust status based on other files
-            if (videoFile && editData) {
-                statusDiv.textContent = 'Video, JSON & Subtitles loaded.';
-            } else if (videoFile) {
-                statusDiv.textContent = 'Video & Subtitles loaded.';
-            } else if (editData) {
-                statusDiv.textContent = 'JSON & Subtitles loaded.';
-            } else {
-                statusDiv.textContent = 'Subtitles loaded.';
-            }
-        } else {
-            console.log('No subtitle file selected.');
-            subtitleFile = null;
-            // Adjust status if other files are loaded
-            if (videoFile && editData) {
-                statusDiv.textContent = 'Video & JSON loaded.';
-            } else if (videoFile) {
-                statusDiv.textContent = `Video: ${videoFile.name}`;
-            } else if (editData) {
-                statusDiv.textContent = 'JSON loaded. Upload Video.';
-            } else {
-                statusDiv.textContent = 'Waiting for files...';
-            }
-        }
-    });
-
-    // --- UI Updates ---
-    function updateButtonState() {
-        if (!isFFmpegLoaded && !isProcessing) {
-            processButton.disabled = true;
-            processButton.textContent = 'Loading FFmpeg...';
-            return;
-        }
-
-        if (isFFmpegLoaded && videoFile && editData && !isProcessing) {
-            processButton.disabled = false;
-            processButton.textContent = 'Process Video';
-        } else {
-            processButton.disabled = true;
-            if (isProcessing) {
-                processButton.textContent = 'Processing...';
-            } else if (!videoFile) {
-                processButton.textContent = 'Upload Video File';
-            } else if (!editData) {
-                processButton.textContent = 'Upload JSON File';
-            } else {
-                processButton.textContent = 'Initializing...';
-            }
-        }
+     else {
+        processButton.disabled = true;
+         processButton.textContent = isFFmpegLoaded ? 'Load Video & JSON' : 'Loading FFmpeg...';
     }
+}
 
-    function setLoadingState(loading, message = '') {
-        isProcessing = loading;
-        updateButtonState();
-        statusDiv.textContent = message;
-        progressBar.value = 0;
-        progressBar.style.display = loading ? 'block' : 'none';
-        if (loading) {
-            ffmpegLogPre.textContent = '';
-            downloadArea.innerHTML = '';
+function setLoadingState(loading, message = '') {
+    isProcessing = loading;
+    updateButtonState();
+    statusDiv.textContent = message;
+    progressBar.style.display = loading ? 'block' : 'none';
+    progressBar.value = 0;
+     if (loading) {
+         ffmpegLogPre.textContent = ''; // Clear log on new process
+         downloadArea.innerHTML = ''; // Clear previous download links
+     }
+}
+
+// --- Core Logic ---
+processButton.addEventListener('click', async () => {
+    if (!videoFile || !editData || !isFFmpegLoaded || isProcessing) return;
+
+    setLoadingState(true, 'Starting processing...');
+
+    try {
+        const mode = modeKeepRadio.checked ? 'keep' : 'remove';
+        const frameRate = editData.video.media.video.timecode.rate.timebase;
+        const totalDurationFrames = editData.video.media.video.duration;
+        const totalDurationSec = totalDurationFrames / frameRate;
+
+        // 1. Calculate Segments to Keep (in seconds)
+        const segmentsToKeep = calculateKeepSegments(editData.clips, mode, frameRate, totalDurationSec);
+        if (segmentsToKeep.length === 0) {
+            throw new Error("No segments to keep after processing rules.");
         }
-    }
 
-    // --- Core Logic ---
-    processButton.addEventListener('click', async () => {
-        if (!videoFile || !editData || !isFFmpegLoaded || isProcessing) {
-            console.warn("Processing attempted but conditions not met.");
-            alert("Please ensure FFmpeg is loaded and both video and JSON files are selected.");
-            return;
-        }
+        statusDiv.textContent = `Calculated ${segmentsToKeep.length} segment(s) to keep.`;
+        console.log("Segments to keep (seconds):", segmentsToKeep);
 
-        setLoadingState(true, 'Starting processing...');
-        ffmpegLogPre.textContent = 'Processing started...\n';
+        // 2. Write input video to FFmpeg's virtual filesystem
+        const inputFilename = 'input.mp4';
+        statusDiv.textContent = 'Loading video into memory...';
+        ffmpeg.FS('writeFile', inputFilename, await fetchFile(videoFile));
+        statusDiv.textContent = 'Video loaded. Starting FFmpeg...';
+
+
+        // 3. Process Video Segments (Extract and Concat)
+        const outputFilename = `output_${Date.now()}.mp4`;
+        const segmentFiles = [];
+        const concatListFilename = 'mylist.txt';
+        let concatFileContent = '';
 
         // --- Multi-stage progress tracking ---
-        let totalStages = 1;
+        const totalStages = segmentsToKeep.length + 1; // N extractions + 1 concat
         let currentStage = 0;
-        let segmentsToKeep = [];
         window.updateOverallProgress = (stageRatio) => {
-            const validStageRatio = isFinite(stageRatio) && stageRatio >= 0 && stageRatio <= 1 ? stageRatio : 0;
-            const overallRatio = (currentStage + validStageRatio) / totalStages;
-            const overallPercentage = Math.min(100, Math.max(0, overallRatio * 100));
-            progressBar.value = overallPercentage;
-            statusDiv.textContent = `Processing: Stage ${currentStage + 1}/${totalStages} (${overallPercentage.toFixed(1)}%)`;
+            const overallRatio = (currentStage + stageRatio) / totalStages;
+             progressBar.value = overallRatio * 100;
+             statusDiv.textContent = `Processing: Stage ${currentStage + 1}/${totalStages} (${(overallRatio * 100).toFixed(1)}%)`;
         };
+        // --- ---
 
-        try {
-            const mode = modeKeepRadio.checked ? 'keep' : 'remove';
-            const frameRate = editData.video.media.video.timecode.rate.timebase;
-            const totalDurationFrames = editData.video.media.video.duration;
+        // Extract each segment
+        for (let i = 0; i < segmentsToKeep.length; i++) {
+            currentStage = i;
+            const segment = segmentsToKeep[i];
+            const start = segment.start.toFixed(6); // Use high precision
+            const duration = (segment.end - segment.start).toFixed(6);
+            const tempOutputFilename = `segment_${i}.mp4`;
 
-            if (!frameRate || typeof frameRate !== 'number' || frameRate <= 0) {
-                throw new Error(`Invalid frame rate (${frameRate}) in JSON data.`);
-            }
-            if (!totalDurationFrames || typeof totalDurationFrames !== 'number' || totalDurationFrames <= 0) {
-                throw new Error(`Invalid total duration (${totalDurationFrames}) in JSON data.`);
-            }
+            statusDiv.textContent = `Extracting segment ${i + 1}/${segmentsToKeep.length}... (Start: ${start}s, Duration: ${duration}s)`;
+            console.log(`Running FFmpeg for segment ${i}: -ss ${start} -i ${inputFilename} -t ${duration} -c copy -map 0 -avoid_negative_ts make_zero ${tempOutputFilename}`);
 
-            const totalDurationSec = totalDurationFrames / frameRate;
-            segmentsToKeep = calculateKeepSegments(editData.clips, mode, frameRate, totalDurationSec);
-            if (segmentsToKeep.length === 0) {
-                throw new Error("No segments to keep after applying rules. Check JSON and mode.");
-            }
-
-            statusDiv.textContent = `Calculated ${segmentsToKeep.length} segment(s) to keep.`;
-            console.log("Segments to keep (seconds):", segmentsToKeep);
-            ffmpegLogPre.textContent += `Calculated ${segmentsToKeep.length} segment(s) to keep.\n`;
-            totalStages = segmentsToKeep.length + 1;
-
-            const inputFilename = 'input.mp4';
-            ffmpegLogPre.textContent += 'Writing video to FFmpeg memory...\n';
-            statusDiv.textContent = 'Loading video into memory...';
-            
-            // Safe file operations with error handling
-            try { 
-                const fileList = ffmpeg.FS('readdir', '/');
-                if (fileList.includes(inputFilename)) {
-                    ffmpeg.FS('unlink', inputFilename);
-                }
-            } catch (e) {
-                console.log("No previous input file to unlink");
-            }
-            
-            ffmpeg.FS('writeFile', inputFilename, await fetchFile(videoFile));
-            statusDiv.textContent = 'Video loaded. Starting FFmpeg processing...';
-            ffmpegLogPre.textContent += 'Video written to memory. Starting segment extraction...\n';
-
-            const outputFilename = `output_${Date.now()}.mp4`;
-            const segmentFiles = [];
-            const concatListFilename = 'mylist.txt';
-            let concatFileContent = '';
-
-            for (let i = 0; i < segmentsToKeep.length; i++) {
-                currentStage = i;
-                const segment = segmentsToKeep[i];
-                const start = segment.start.toFixed(6);
-                const duration = (segment.end - segment.start).toFixed(6);
-                const tempOutputFilename = `segment_${i}.mp4`;
-
-                if (parseFloat(duration) <= 0.001) {
-                    console.warn(`Skipping very short segment ${i + 1}`);
-                    ffmpegLogPre.textContent += `Skipping very short segment ${i+1} (duration: ${duration}s)\n`;
-                    totalStages = Math.max(1, totalStages - 1);
-                    continue;
-                }
-
-                statusDiv.textContent = `Extracting segment ${i + 1}/${segmentsToKeep.length}...`;
-                ffmpegLogPre.textContent += `\n--- Extracting segment ${i + 1} ---\nStart: ${start}s, Duration: ${duration}s\nOutput: ${tempOutputFilename}\n`;
-                
-                try {
-                    const fileList = ffmpeg.FS('readdir', '/');
-                    if (fileList.includes(tempOutputFilename)) {
-                        ffmpeg.FS('unlink', tempOutputFilename);
-                    }
-                } catch(e) {
-                    console.log(`No previous ${tempOutputFilename} to unlink`);
-                }
-
-                // v0.11.0 requires each argument as a separate string
-                await ffmpeg.run(
-                    '-ss', start,
-                    '-i', inputFilename,
-                    '-t', duration,
-                    '-c', 'copy',
-                    '-map', '0',
-                    '-avoid_negative_ts', 'make_zero',
-                    '-movflags', '+faststart',
-                    tempOutputFilename
-                );
-                
-                ffmpegLogPre.textContent += `Segment ${i+1} extracted.\n`;
-                segmentFiles.push(tempOutputFilename);
-                concatFileContent += `file '${tempOutputFilename}'\n`;
-            }
-
-            totalStages = segmentFiles.length + (segmentFiles.length > 1 ? 1 : 0);
-
-            if (segmentFiles.length === 0) {
-                throw new Error("No valid segments were extracted.");
-            } else if (segmentFiles.length === 1) {
-                statusDiv.textContent = 'Only one segment, renaming...';
-                ffmpegLogPre.textContent += '\n--- Only one segment, renaming ---\n';
-                ffmpeg.FS('rename', segmentFiles[0], outputFilename);
-                ffmpegLogPre.textContent += `Renamed ${segmentFiles[0]} to ${outputFilename}\n`;
-            } else {
-                ffmpegLogPre.textContent += '\n--- Concatenating segments ---\n';
-                
-                try {
-                    const fileList = ffmpeg.FS('readdir', '/');
-                    if (fileList.includes(concatListFilename)) {
-                        ffmpeg.FS('unlink', concatListFilename);
-                    }
-                } catch(e) {
-                    console.log(`No previous ${concatListFilename} to unlink`);
-                }
-                
-                ffmpeg.FS('writeFile', concatListFilename, concatFileContent);
-                ffmpegLogPre.textContent += `Created ${concatListFilename}\n`;
-                currentStage = segmentFiles.length;
-                statusDiv.textContent = `Concatenating ${segmentFiles.length} segments...`;
-                console.log(`Running FFmpeg for concat: -f concat -safe 0 -i ${concatListFilename} -c copy ${outputFilename}`);
-                ffmpegLogPre.textContent += `Running concat command...\n`;
-                
-                try {
-                    const fileList = ffmpeg.FS('readdir', '/');
-                    if (fileList.includes(outputFilename)) {
-                        ffmpeg.FS('unlink', outputFilename);
-                    }
-                } catch(e) {
-                    console.log(`No previous ${outputFilename} to unlink`);
-                }
-
-                await ffmpeg.run(
-                    '-f', 'concat',
-                    '-safe', '0',
-                    '-i', concatListFilename,
-                    '-c', 'copy',
-                    '-movflags', '+faststart',
-                    outputFilename
-                );
-                ffmpegLogPre.textContent += `Concatenation complete: ${outputFilename}\n`;
-            }
-
-            statusDiv.textContent = 'Processing complete. Retrieving output file...';
-            ffmpegLogPre.textContent += 'Reading output file from memory...\n';
-            const outputData = ffmpeg.FS('readFile', outputFilename);
-            createDownloadLink(outputData, outputFilename, 'video/mp4');
-            statusDiv.textContent = 'Processed video ready for download!';
-            ffmpegLogPre.textContent += 'Video download link created.\n';
-
-            if (subtitleFile) {
-                statusDiv.textContent = 'Processing subtitles...';
-                ffmpegLogPre.textContent += '\n--- Processing Subtitles ---\n';
-                try {
-                    const subtitleText = await subtitleFile.text();
-                    const subtitleType = subtitleFile.name.toLowerCase().endsWith('.srt') ? 'srt' : 'vtt';
-                    ffmpegLogPre.textContent += `Type: ${subtitleType}, Original file: ${subtitleFile.name}\n`;
-                    const processedSubs = processSubtitles(subtitleText, subtitleType, segmentsToKeep);
-                    const subOutputFilename = `processed_subs_${Date.now()}.${subtitleType}`;
-                    createDownloadLink(processedSubs, subOutputFilename, `text/${subtitleType}`);
-                    statusDiv.textContent = 'Video & Subtitles ready for download!';
-                    ffmpegLogPre.textContent += `Processed subtitles ready: ${subOutputFilename}\n`;
-                } catch (subError) {
-                    console.error("Subtitle processing error:", subError);
-                    statusDiv.textContent += ` (Subtitle processing failed: ${subError.message})`;
-                    ffmpegLogPre.textContent += `ERROR processing subtitles: ${subError.message}\n`;
-                }
-            }
-
-            ffmpegLogPre.textContent += '\n--- Cleaning up memory ---\n';
-            
-            // Cleanup - using try/catch for each file operation
-            try { 
-                ffmpeg.FS('unlink', inputFilename); 
-                ffmpegLogPre.textContent += `Unlinked ${inputFilename}\n`; 
-            } catch(e) {
-                console.log(`Error unlinking ${inputFilename}:`, e);
-            }
-            
-            if (segmentFiles.length > 1) { 
-                try { 
-                    ffmpeg.FS('unlink', concatListFilename); 
-                    ffmpegLogPre.textContent += `Unlinked ${concatListFilename}\n`; 
-                } catch(e) {
-                    console.log(`Error unlinking ${concatListFilename}:`, e);
-                }
-            }
-            
-            segmentFiles.forEach(fname => { 
-                try { 
-                    ffmpeg.FS('unlink', fname); 
-                    ffmpegLogPre.textContent += `Unlinked ${fname}\n`; 
-                } catch (e) {
-                    console.log(`Error unlinking ${fname}:`, e);
-                } 
-            });
-            
-            try { 
-                ffmpeg.FS('unlink', outputFilename); 
-                ffmpegLogPre.textContent += `Unlinked ${outputFilename}\n`; 
-            } catch(e) {
-                console.log(`Error unlinking ${outputFilename}:`, e);
-            }
-
-        } catch (error) {
-            console.error("Processing Error:", error);
-            statusDiv.textContent = `Error: ${error.message}. Check console & log.`;
-            ffmpegLogPre.textContent += `\n\n ***** PROCESSING ERROR *****\n${error.stack || error.message}\n`;
-            alert(`An error occurred during processing: ${error.message}`);
-        } finally {
-            setLoadingState(false, statusDiv.textContent);
-            window.updateOverallProgress = null;
-            ffmpegLogPre.textContent += '\nProcessing routine finished.\n';
-            requestAnimationFrame(() => {
-                ffmpegLogPre.scrollTop = ffmpegLogPre.scrollHeight;
-            });
-        }
-    });
-
-    // --- Helper Functions ---
-    function calculateKeepSegments(clips, mode, frameRate, totalDurationSec) {
-        if (!clips || !Array.isArray(clips)) {
-            throw new Error("Invalid 'clips' data in JSON.");
-        }
-        
-        const jsonSegments = clips.map((clip, index) => {
-            if (typeof clip.start !== 'number' || typeof clip.end !== 'number') {
-                throw new Error(`Invalid start/end type in clip index ${index}. Expected numbers.`);
-            }
-            if (clip.start < 0 || clip.end < 0) {
-                throw new Error(`Negative start/end frame in clip index ${index}.`);
-            }
-            if (clip.end <= clip.start) {
-                console.warn(`Clip index ${index} has end frame <= start frame (${clip.end} <= ${clip.start}).`);
-            }
-            return { start: clip.start / frameRate, end: clip.end / frameRate };
-        }).sort((a, b) => a.start - b.start);
-
-        let keepSegments = [];
-        
-        if (mode === 'keep') {
-            if (jsonSegments.length === 0) return [];
-            
-            let currentSegment = { ...jsonSegments[0] };
-            for (let i = 1; i < jsonSegments.length; i++) {
-                const nextSegment = jsonSegments[i];
-                if (nextSegment.start <= currentSegment.end + 0.001) {
-                    currentSegment.end = Math.max(currentSegment.end, nextSegment.end);
-                } else {
-                    if (currentSegment.end > currentSegment.start) {
-                        keepSegments.push({
-                            start: Math.max(0, currentSegment.start),
-                            end: Math.min(totalDurationSec, currentSegment.end)
-                        });
-                    }
-                    currentSegment = { ...nextSegment };
-                }
-            }
-            
-            if (currentSegment.end > currentSegment.start) {
-                keepSegments.push({
-                    start: Math.max(0, currentSegment.start),
-                    end: Math.min(totalDurationSec, currentSegment.end)
-                });
-            }
-        } else { // mode === 'remove'
-            let lastEndTime = 0;
-            let mergedRemoveSegments = [];
-            
-            if (jsonSegments.length > 0) {
-                let currentRemove = { ...jsonSegments[0] };
-                for (let i = 1; i < jsonSegments.length; i++) {
-                    const nextRemove = jsonSegments[i];
-                    if (nextRemove.start <= currentRemove.end + 0.001) {
-                        currentRemove.end = Math.max(currentRemove.end, nextRemove.end);
-                    } else {
-                        if (currentRemove.end > currentRemove.start) {
-                            mergedRemoveSegments.push(currentRemove);
-                        }
-                        currentRemove = { ...nextRemove };
-                    }
-                }
-                
-                if (currentRemove.end > currentRemove.start) {
-                    mergedRemoveSegments.push(currentRemove);
-                }
-            }
-            
-            for (const removeSegment of mergedRemoveSegments) {
-                const removeStart = Math.max(0, removeSegment.start);
-                const removeEnd = Math.min(totalDurationSec, removeSegment.end);
-                
-                if (removeStart < removeEnd) {
-                    if (removeStart > lastEndTime + 0.001) {
-                        keepSegments.push({ start: lastEndTime, end: removeStart });
-                    }
-                    lastEndTime = Math.max(lastEndTime, removeEnd);
-                }
-            }
-            
-            if (lastEndTime < totalDurationSec - 0.001) {
-                keepSegments.push({ start: lastEndTime, end: totalDurationSec });
-            }
-        }
-        
-        return keepSegments.filter(seg => (seg.end - seg.start) > 0.001 && seg.start < totalDurationSec);
-    }
-
-    function createDownloadLink(data, filename, mimeType) {
-        let blob;
-        
-        if (data instanceof Blob) {
-            blob = data;
-        } else if (data instanceof Uint8Array) {
-            blob = new Blob([data.buffer], { type: mimeType });
-        } else if (typeof data === 'string') {
-            blob = new Blob([data], { type: mimeType });
-        } else {
-            console.error("Cannot create download link for data type:", typeof data);
-            return;
-        }
-        
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.textContent = `Download ${filename}`;
-        a.style.display = 'block';
-        a.style.margin = '10px 0';
-        a.style.padding = '10px';
-        a.style.border = '1px solid #ccc';
-        a.style.borderRadius = '4px';
-        a.style.textDecoration = 'none';
-        a.style.backgroundColor = '#eee';
-        a.style.color = '#333';
-        a.addEventListener('click', () => {
-            setTimeout(() => URL.revokeObjectURL(url), 100);
-        });
-        
-        downloadArea.appendChild(a);
-    }
-
-    function timeToSeconds(timeStr) {
-        if (!timeStr || typeof timeStr !== 'string') return NaN;
-        
-        const parts = timeStr.split(':');
-        let seconds = 0;
-        const msSeparator = timeStr.includes(',') ? ',' : '.';
-        
-        try {
-            if (parts.length === 3) {
-                const secParts = parts[2].split(msSeparator);
-                seconds += parseInt(parts[0], 10) * 3600;
-                seconds += parseInt(parts[1], 10) * 60;
-                seconds += parseInt(secParts[0], 10);
-                if (secParts.length > 1) {
-                    seconds += parseInt(secParts[1].padEnd(3, '0'), 10) / 1000;
-                }
-            } else if (parts.length === 2) {
-                const secParts = parts[1].split(msSeparator);
-                seconds += parseInt(parts[0], 10) * 60;
-                seconds += parseInt(secParts[0], 10);
-                if (secParts.length > 1) {
-                    seconds += parseInt(secParts[1].padEnd(3, '0'), 10) / 1000;
-                }
-            } else {
-                console.warn("Unsupported time format:", timeStr);
-                return NaN;
-            }
-            return seconds;
-        } catch (e) {
-            console.warn("Error parsing time string:", timeStr, e);
-            return NaN;
-        }
-    }
-
-    function secondsToTime(totalSeconds, format = 'vtt') {
-        if (isNaN(totalSeconds) || totalSeconds < 0) {
-            return `00:00:00${format === 'vtt' ? '.' : ','}000`;
-        }
-        
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = Math.floor(totalSeconds % 60);
-        const milliseconds = Math.round((totalSeconds % 1) * 1000);
-        
-        const sep = format === 'vtt' ? '.' : ',';
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}${sep}${String(milliseconds).padStart(3, '0')}`;
-    }
-
-    function processSubtitles(subtitleText, type, keepSegments) {
-        const lines = subtitleText.split(/\r?\n/);
-        let outputLines = [];
-        let cue = null;
-        const timePattern = /(\d{1,2}:\d{2}:\d{2}[.,]\d{3})\s+-->\s+(\d{1,2}:\d{2}:\d{2}[.,]\d{3})/;
-        
-        if (type === 'vtt') {
-            outputLines.push('WEBVTT');
-            let i = 1;
-            while(lines[i] && lines[i].trim() !== '' && !lines[i].match(timePattern)) {
-                outputLines.push(lines[i]);
-                i++;
-            }
-            outputLines.push('');
-        }
-        
-        // These more meaningful state names make the code more maintainable
-        let parsingState = 'looking_for_cue_id_or_time';
-        let cueHeaderLines = [];
-        let cueTextLines = [];
-        
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const trimmedLine = line.trim();
-            const timeMatch = trimmedLine.match(timePattern);
-            
-            if (parsingState === 'looking_for_cue_id_or_time') {
-                if (trimmedLine === '') {
-                    continue;
-                } else if (timeMatch) {
-                    parsingState = 'looking_for_text';
-                    cue = {
-                        originalStart: timeToSeconds(timeMatch[1]),
-                        originalEnd: timeToSeconds(timeMatch[2]),
-                        headerLines: cueHeaderLines,
-                        timeLine: line
-                    };
-                    cueHeaderLines = [];
-                    cueTextLines = [];
-                } else {
-                    cueHeaderLines.push(line);
-                    parsingState = 'looking_for_time';
-                }
-            } else if (parsingState === 'looking_for_time') {
-                if (timeMatch) {
-                    parsingState = 'looking_for_text';
-                    cue = {
-                        originalStart: timeToSeconds(timeMatch[1]),
-                        originalEnd: timeToSeconds(timeMatch[2]),
-                        headerLines: cueHeaderLines,
-                        timeLine: line
-                    };
-                    cueHeaderLines = [];
-                    cueTextLines = [];
-                } else if (trimmedLine === '') {
-                    console.warn("Subtitle Parse Warning: Blank line after identifier before timecode near line:", i);
-                    parsingState = 'looking_for_cue_id_or_time';
-                    cueHeaderLines = [];
-                } else {
-                    cueHeaderLines.push(line);
-                }
-            } else if (parsingState === 'looking_for_text') {
-                if (trimmedLine === '') {
-                    if (cue) {
-                        let { adjustedStart, adjustedEnd, belongs } = checkAndAdjustCueTime(
-                            cue.originalStart, cue.originalEnd, keepSegments
-                        );
-                        
-                        if (belongs && !isNaN(adjustedStart) && !isNaN(adjustedEnd)) {
-                            const adjustedTimeLine = cue.timeLine.replace(
-                                timePattern, 
-                                `${secondsToTime(adjustedStart, type)} --> ${secondsToTime(adjustedEnd, type)}`
-                            );
-                            outputLines.push(...cue.headerLines);
-                            outputLines.push(adjustedTimeLine);
-                            outputLines.push(...cueTextLines);
-                            outputLines.push('');
-                        }
-                        cue = null;
-                    }
-                    
-                    parsingState = 'looking_for_cue_id_or_time';
-                    cueHeaderLines = [];
-                    cueTextLines = [];
-                } else {
-                    cueTextLines.push(line);
-                }
-            }
-        }
-        
-        // Handle the last cue if we're still in the looking_for_text state
-        if (parsingState === 'looking_for_text' && cue && cueTextLines.length > 0) {
-            let { adjustedStart, adjustedEnd, belongs } = checkAndAdjustCueTime(
-                cue.originalStart, cue.originalEnd, keepSegments
+            // FFmpeg command to extract one segment losslessly
+            // -ss BEFORE -i: Faster seeking, might be less accurate for some formats but generally good for MP4.
+            // -t duration: Specify duration to extract.
+            // -c copy: Lossless copy of video and audio streams.
+            // -map 0: Include all streams from input (video, audio, data).
+            // -avoid_negative_ts make_zero: Helps prevent timestamp issues when concatenating later.
+            await ffmpeg.run(
+                '-ss', start,        // Seek to start time (input option)
+                '-i', inputFilename,
+                '-t', duration,      // Specify duration (output option relative to -ss)
+                '-c', 'copy',        // Copy codecs losslessly
+                '-map', '0',         // Map all streams
+                '-avoid_negative_ts', 'make_zero', // Adjust timestamps to start near zero for concat
+                tempOutputFilename
             );
-            
-            if (belongs && !isNaN(adjustedStart) && !isNaN(adjustedEnd)) {
-                const adjustedTimeLine = cue.timeLine.replace(
-                    timePattern, 
-                    `${secondsToTime(adjustedStart, type)} --> ${secondsToTime(adjustedEnd, type)}`
-                );
-                outputLines.push(...cue.headerLines);
-                outputLines.push(adjustedTimeLine);
-                outputLines.push(...cueTextLines);
-            }
-        }
-        
-        return outputLines.join('\n');
-    }
 
-    function checkAndAdjustCueTime(originalStart, originalEnd, keepSegments) {
-        if (isNaN(originalStart) || isNaN(originalEnd)) {
-            console.warn("Invalid original cue times:", originalStart, originalEnd);
-            return { adjustedStart: NaN, adjustedEnd: NaN, belongs: false };
+            segmentFiles.push(tempOutputFilename);
+            concatFileContent += `file '${tempOutputFilename}'\n`;
         }
-        
-        let cumulativeDurationBefore = 0;
-        let belongs = false;
-        let firstOverlap = true;
-        let adjustedStart = NaN;
-        let adjustedEnd = NaN;
-        
-        for (const segment of keepSegments) {
-            const segmentDuration = segment.end - segment.start;
-            if (segmentDuration <= 0) continue;
-            
-            const overlapStart = Math.max(originalStart, segment.start);
-            const overlapEnd = Math.min(originalEnd, segment.end);
-            
-            if (overlapStart < overlapEnd) {
-                belongs = true;
-                const startWithinSegment = overlapStart - segment.start;
-                const endWithinSegment = overlapEnd - segment.start;
-                
-                if (firstOverlap) {
-                    adjustedStart = cumulativeDurationBefore + startWithinSegment;
-                    firstOverlap = false;
-                }
-                
-                adjustedEnd = cumulativeDurationBefore + endWithinSegment;
-            }
-            
-            cumulativeDurationBefore += segmentDuration;
-        }
-        
-        if (belongs) {
-            if (adjustedEnd <= adjustedStart) {
-                adjustedEnd = adjustedStart + 0.001;
-                console.warn(`Adjusted cue end time <= start time. Setting minimal duration. Orig: ${originalStart}-${originalEnd}, Adj: ${adjustedStart}-${adjustedEnd}`);
-            }
-        } else {
-            adjustedStart = NaN;
-            adjustedEnd = NaN;
-        }
-        
-        return { originalStart, originalEnd, adjustedStart, adjustedEnd, belongs };
-    }
 
-    // --- Initial Setup ---
-    updateButtonState();
-    loadFFmpeg();
+        // Create the concat list file in FFmpeg's FS
+        ffmpeg.FS('writeFile', concatListFilename, concatFileContent);
+
+        // Concatenate segments
+        currentStage = segmentsToKeep.length; // The final concat stage
+        statusDiv.textContent = `Concatenating ${segmentFiles.length} segments...`;
+        console.log(`Running FFmpeg for concat: -f concat -safe 0 -i ${concatListFilename} -c copy ${outputFilename}`);
+
+        // FFmpeg command to concatenate using the demuxer (lossless)
+        // -f concat: Use the concat demuxer.
+        // -safe 0: Allow relative paths in the list file (needed for FS).
+        // -i mylist.txt: Input file list.
+        // -c copy: Lossless copy.
+        await ffmpeg.run(
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concatListFilename,
+            '-c', 'copy',
+            outputFilename
+        );
+
+        // 4. Retrieve Output Video
+        statusDiv.textContent = 'Processing complete. Retrieving output file...';
+        const outputData = ffmpeg.FS('readFile', outputFilename);
+
+        // 5. Create Download Link for Video
+        createDownloadLink(outputData, outputFilename, 'video/mp4');
+        statusDiv.textContent = 'Processed video ready for download!';
+
+
+        // 6. (Optional) Process Subtitles
+        if (subtitleFile) {
+            statusDiv.textContent = 'Processing subtitles...';
+            try {
+                 const subtitleText = await subtitleFile.text();
+                 const subtitleType = subtitleFile.name.endsWith('.srt') ? 'srt' : 'vtt';
+                 const processedSubs = processSubtitles(subtitleText, subtitleType, segmentsToKeep);
+                 const subOutputFilename = `processed_subs_${Date.now()}.${subtitleType}`;
+                 createDownloadLink(processedSubs, subOutputFilename, 'text/plain'); // Use text/plain or specific mime type
+                 statusDiv.textContent += ' Processed subtitles ready!';
+             } catch (subError) {
+                 console.error("Subtitle processing error:", subError);
+                 statusDiv.textContent += ` (Subtitle processing failed: ${subError.message})`;
+            }
+         }
+
+        // 7. Cleanup FFmpeg virtual filesystem (optional, frees memory)
+         try {
+             ffmpeg.FS('unlink', inputFilename);
+             ffmpeg.FS('unlink', concatListFilename);
+             segmentFiles.forEach(fname => ffmpeg.FS('unlink', fname));
+             ffmpeg.FS('unlink', outputFilename);
+         } catch (unlinkError) {
+             console.warn("Minor error during FS cleanup:", unlinkError); // Non-critical
+         }
+
+
+    } catch (error) {
+        console.error("Processing Error:", error);
+        statusDiv.textContent = `Error: ${error.message}. Check console for details.`;
+        alert(`An error occurred during processing: ${error.message}`);
+    } finally {
+         setLoadingState(false, statusDiv.textContent); // Keep last status message
+         window.updateOverallProgress = null; // Clear global helper
+    }
+});
+
+// --- Helper Functions ---
+
+function calculateKeepSegments(clips, mode, frameRate, totalDurationSec) {
+    // Convert JSON clip frames to time segments in seconds
+    const jsonSegments = clips.map(clip => ({
+        start: clip.start / frameRate,
+        end: clip.end / frameRate
+    })).sort((a, b) => a.start - b.start); // Sort by start time
+
+    if (mode === 'keep') {
+        // Directly use the sorted, valid segments
+         return jsonSegments.filter(seg => seg.start < totalDurationSec && seg.end > seg.start);
+    } else { // mode === 'remove'
+        let keepSegments = [];
+        let lastEndTime = 0;
+
+        // Iterate through the segments *to be removed*
+        for (const removeSegment of jsonSegments) {
+            // Ensure removal segment is within bounds and valid
+            const removeStart = Math.max(0, removeSegment.start);
+            const removeEnd = Math.min(totalDurationSec, removeSegment.end);
+
+            if (removeStart < removeEnd) { // Only process valid removal segments
+                 // Add the segment *before* the removal segment
+                 if (removeStart > lastEndTime) {
+                    keepSegments.push({ start: lastEndTime, end: removeStart });
+                 }
+                 // Update the start point for the *next* potential keep segment
+                 lastEndTime = Math.max(lastEndTime, removeEnd);
+            }
+        }
+
+        // Add the final segment *after* the last removal segment, if any space remains
+        if (lastEndTime < totalDurationSec) {
+            keepSegments.push({ start: lastEndTime, end: totalDurationSec });
+        }
+
+        // Filter out any tiny segments that might result from floating point inaccuracies
+        return keepSegments.filter(seg => (seg.end - seg.start) > 0.01); // Keep segments > 10ms
+    }
 }
+
+function createDownloadLink(data, filename, mimeType) {
+    const blob = new Blob([data.buffer], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.textContent = `Download ${filename}`;
+    downloadArea.appendChild(a);
+
+     // Clean up the Object URL eventually (though browser often handles it on navigation)
+     // Consider adding a button to explicitly revoke URLs if memory becomes an issue
+     // Or revoke after a timeout: setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+
+// --- Subtitle Processing ---
+
+// Simple time string (HH:MM:SS.ms or MM:SS.ms) to seconds converter
+function timeToSeconds(timeStr) {
+    const parts = timeStr.split(':');
+    let seconds = 0;
+    if (parts.length === 3) { // HH:MM:SS.ms
+        seconds += parseFloat(parts[0]) * 3600;
+        seconds += parseFloat(parts[1]) * 60;
+        seconds += parseFloat(parts[2].replace(',', '.'));
+    } else if (parts.length === 2) { // MM:SS.ms
+        seconds += parseFloat(parts[0]) * 60;
+        seconds += parseFloat(parts[1].replace(',', '.'));
+    } else {
+        // Potentially handle just seconds? Or throw error?
+        console.warn("Unsupported time format:", timeStr);
+        return NaN;
+    }
+    return seconds;
+}
+
+// Seconds to VTT/SRT time string (HH:MM:SS.ms)
+function secondsToTime(totalSeconds, format = 'vtt') {
+     if (isNaN(totalSeconds) || totalSeconds < 0) return `00:00:00${format === 'vtt' ? '.' : ','}000`;
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    const milliseconds = Math.floor((totalSeconds % 1) * 1000);
+
+    const sep = format === 'vtt' ? '.' : ',';
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}${sep}${String(milliseconds).padStart(3, '0')}`;
+}
+
+
+function processSubtitles(subtitleText, type, keepSegments) {
+    const lines = subtitleText.split(/\r?\n/);
+    let outputLines = [];
+    let currentTimeOffset = 0; // Amount to subtract from original times
+    let lastKeepSegmentEnd = 0;
+    let cue = null;
+    const timePattern = /(\d{2}:\d{2}:\d{2}[.,]\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}[.,]\d{3})/; // Matches VTT/SRT timecodes
+
+    if (type === 'vtt') {
+         outputLines.push('WEBVTT\n'); // VTT Header
+     }
+
+    let segmentIndex = 0;
+    let parsingCue = false;
+    let cueText = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        const timeMatch = line.match(timePattern);
+
+        if (timeMatch) {
+             // Finish previous cue if exists
+             if (cue && cueText.length > 0) {
+                 // Check if this cue belongs in the output
+                 let { originalStart, originalEnd, adjustedStart, adjustedEnd, belongs } = checkAndAdjustCueTime(cue.originalStart, cue.originalEnd, keepSegments);
+                 if (belongs) {
+                      // Add previous lines (like cue number for SRT)
+                      outputLines.push(...cue.headerLines);
+                      // Add adjusted time line
+                      outputLines.push(`${secondsToTime(adjustedStart, type)} --> ${secondsToTime(adjustedEnd, type)}`);
+                      // Add text lines
+                      outputLines.push(...cueText);
+                      outputLines.push(''); // Blank line separator
+                 }
+             }
+
+             // Start new cue parsing
+             parsingCue = true;
+             cueText = [];
+             const originalStart = timeToSeconds(timeMatch[1]);
+             const originalEnd = timeToSeconds(timeMatch[2]);
+             cue = {
+                 originalStart,
+                 originalEnd,
+                 headerLines: []
+             };
+
+              // Add lines BEFORE the timecode line (e.g., SRT cue number) to the header
+              let j = i - 1;
+              while (j >= 0 && lines[j].trim() !== '' && !lines[j].match(timePattern)) {
+                   // Check if it's likely a cue number (SRT specific)
+                   if (type === 'srt' && /^\d+$/.test(lines[j].trim())) {
+                       cue.headerLines.unshift(lines[j].trim()); // Add cue number
+                       break; // Assume only one line before time for SRT
+                   } else if (type === 'vtt' && !lines[j].trim().includes('-->')) {
+                        // Could be VTT cue identifiers or settings, capture them
+                        cue.headerLines.unshift(lines[j].trim());
+                   }
+                   j--;
+              }
+
+
+         } else if (parsingCue && line === '') {
+             // Blank line signifies end of current cue text
+             parsingCue = false; // Will be processed on next time match or end of file
+
+         } else if (parsingCue) {
+             // Add text line to current cue
+             cueText.push(line);
+         } else if (!parsingCue && line !== '' && outputLines.length === (type === 'vtt' ? 1 : 0)) {
+              // Capture potential extra header lines in VTT after WEBVTT line
+              if (type === 'vtt' && !line.includes('-->')) {
+                   outputLines.push(line);
+                   outputLines.push(''); // Add blank line after header block if needed
+              }
+         }
+    }
+
+    // Process the very last cue if it exists
+    if (cue && cueText.length > 0) {
+         let { originalStart, originalEnd, adjustedStart, adjustedEnd, belongs } = checkAndAdjustCueTime(cue.originalStart, cue.originalEnd, keepSegments);
+         if (belongs) {
+             outputLines.push(...cue.headerLines);
+             outputLines.push(`${secondsToTime(adjustedStart, type)} --> ${secondsToTime(adjustedEnd, type)}`);
+             outputLines.push(...cueText);
+             outputLines.push('');
+         }
+    }
+
+
+    return outputLines.join('\n');
+}
+
+
+// Checks if a cue's time range overlaps with any keep segment and calculates adjusted times
+function checkAndAdjustCueTime(originalStart, originalEnd, keepSegments) {
+    let cumulativeDurationBefore = 0;
+    let belongs = false;
+    let adjustedStart = NaN;
+    let adjustedEnd = NaN;
+
+     for (const segment of keepSegments) {
+         const segmentDuration = segment.end - segment.start;
+
+         // Calculate overlap range
+         const overlapStart = Math.max(originalStart, segment.start);
+         const overlapEnd = Math.min(originalEnd, segment.end);
+
+         if (overlapStart < overlapEnd) { // They overlap
+             belongs = true;
+
+             // Calculate adjusted times relative to the start of the concatenated output
+             // The start time is the time *within* the segment plus the duration of all *previous* segments.
+             const startWithinSegment = overlapStart - segment.start;
+             const endWithinSegment = overlapEnd - segment.start;
+
+
+            // Important: Only set adjustedStart the *first* time an overlap is found
+             if (isNaN(adjustedStart)) {
+                 adjustedStart = cumulativeDurationBefore + startWithinSegment;
+             }
+             // Always update adjustedEnd to the latest point in the concatenated timeline
+             adjustedEnd = cumulativeDurationBefore + endWithinSegment;
+
+            // Don't break here, a single cue might span across *multiple* keep segments
+             // if there was a removal in between. The adjustedEnd needs to account for this.
+        }
+
+        // Add this segment's duration to the cumulative offset for the next iteration
+        cumulativeDurationBefore += segmentDuration;
+    }
+
+     // Ensure end time is not before start time (can happen with tiny overlaps/rounding)
+     if (belongs && adjustedEnd <= adjustedStart) {
+          adjustedEnd = adjustedStart + 0.001; // Make it slightly longer
+     }
+
+
+    return { originalStart, originalEnd, adjustedStart, adjustedEnd, belongs };
+}
+
+
+// --- Initial Load ---
+loadFFmpeg();
