@@ -1,0 +1,80 @@
+{
+  "sequence": {
+    "name": "6660516ff5274fb187069f54b3478725"
+  },
+  "video": {
+    "file": {
+      "name": "6660516ff5274fb187069f54b3478725.mp4",
+      "pathurl": "C:/Videos/6660516ff5274fb187069f54b3478725.mp4",
+      "media": {
+        "video": {
+          "duration": 2707,
+          "timecode": {
+            "rate": {
+              "ntsc": "TRUE",
+              "timebase": 29.97
+            },
+            "displayformat": "NDF",
+            "first_timecode": "00:00:00:00"
+          },
+          "samplecharacteristics": {
+            "width": 1920,
+            "height": 1080,
+            "anamorphic": "FALSE",
+            "pixelaspectratio": "Square"
+          }
+        },
+        "audio": {
+          "samplecharacteristics": {
+            "depth": 16,
+            "samplerate": "48000"
+          },
+          "channelcount": 2
+        }
+      }
+    }
+  },
+  "clips": [
+    {
+      "id": "1",
+      "start": 96,
+      "end": 257,
+      "subtitles": [
+        {
+          "text": "We started Ireland's Eye Knitwear in 1988. All the employees are like an",
+          "start": 96,
+          "end": 257
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "start": 392,
+      "end": 590,
+      "subtitles": [
+        {
+          "text": "same goal. The environment is very important to me as a designer. Not only",
+          "start": 392,
+          "end": 590
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "start": 1089,
+      "end": 1215,
+      "subtitles": [
+        {
+          "text": "You know the whole ethos of the company is garments that are durable and made to",
+          "start": 1089,
+          "end": 1215
+        }
+      ]
+    }
+  ],
+  "subtitles": {
+    "file": "6660516ff5274fb187069f54b3478725.vtt",
+    "format": "vtt",
+    "count": 20
+  }
+}
