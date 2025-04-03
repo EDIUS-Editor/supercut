@@ -1,11 +1,11 @@
-// --- script.js --- Single-threaded version
+// --- script.js --- More compatible version for GitHub Pages
 
-// This version uses the single-threaded core of FFmpeg.wasm
-// which doesn't require SharedArrayBuffer and works on GitHub Pages
+// This version uses a more compatible approach to loading FFmpeg.wasm
+// which should work better on GitHub Pages and similar hosting platforms
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM loaded. Checking FFmpeg...");
     
-    // Check if FFmpeg is available (different check approach for v0.11.0)
+    // Check if FFmpeg is available
     if (typeof FFmpeg === 'undefined' || !FFmpeg.createFFmpeg) {
         console.error("CRITICAL: FFmpeg global object or createFFmpeg not defined. Check script tag in index.html.");
         // Display a user-friendly error on the page
@@ -48,17 +48,16 @@ function initializeApp() {
     let isFFmpegLoaded = false;
     let isProcessing = false;
 
-    // --- FFmpeg Setup ---
+    // --- FFmpeg Setup with more compatible loading method ---
     async function loadFFmpeg() {
         statusDiv.textContent = 'Loading FFmpeg core... Please wait.';
         ffmpegLogPre.textContent = 'Initializing FFmpeg...\n';
         try {
-            // Use single-threaded core that doesn't require SharedArrayBuffer
+            // Create FFmpeg instance without specifying corePath
+            // Let FFmpeg figure out the optimal core path automatically
             ffmpeg = createFFmpeg({
-                corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js',
                 log: true,
                 logger: ({ message }) => {
-                    // Simplified logging for v0.11.0
                     if (!message.includes('frame=')) {
                         ffmpegLogPre.textContent += message + '\n';
                         requestAnimationFrame(() => {
@@ -78,16 +77,23 @@ function initializeApp() {
                     }
                 },
             });
+
+            ffmpegLogPre.textContent += 'Starting FFmpeg load (this may take a moment)...\n';
+            
+            // Load FFmpeg - this step might take time and could fail on GitHub Pages
             await ffmpeg.load();
+            
             isFFmpegLoaded = true;
             statusDiv.textContent = 'FFmpeg loaded. Ready for files.';
             ffmpegLogPre.textContent += 'FFmpeg core loaded successfully.\n';
             updateButtonState();
         } catch (error) {
             console.error("FFmpeg loading error:", error);
-            statusDiv.textContent = 'Error loading FFmpeg. Check console.';
+            statusDiv.textContent = 'Error loading FFmpeg. See details below.';
             ffmpegLogPre.textContent += `Error loading FFmpeg: ${error}\n`;
-            alert(`Failed to load FFmpeg: ${error}. Try using Chrome or Edge for better compatibility.`);
+            ffmpegLogPre.textContent += 'This is likely due to CORS restrictions on GitHub Pages.\n';
+            ffmpegLogPre.textContent += 'Try using this app on a platform like Netlify or Vercel, or run it locally.\n';
+            alert(`Failed to load FFmpeg. GitHub Pages has CORS restrictions that prevent FFmpeg.wasm from working correctly. Try hosting on Netlify/Vercel or running locally with a proper server.`);
             isFFmpegLoaded = false;
             updateButtonState();
         }
@@ -261,7 +267,7 @@ function initializeApp() {
             ffmpegLogPre.textContent += 'Writing video to FFmpeg memory...\n';
             statusDiv.textContent = 'Loading video into memory...';
             
-            // File operations in v0.11.0 have slightly different error handling
+            // Safe file operations with error handling
             try { 
                 const fileList = ffmpeg.FS('readdir', '/');
                 if (fileList.includes(inputFilename)) {
@@ -634,6 +640,7 @@ function initializeApp() {
             outputLines.push('');
         }
         
+        // These more meaningful state names make the code more maintainable
         let parsingState = 'looking_for_cue_id_or_time';
         let cueHeaderLines = [];
         let cueTextLines = [];
