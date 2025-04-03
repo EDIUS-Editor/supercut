@@ -76,7 +76,7 @@
                 console.error("FFmpeg failed to load properly. Trying alternative CDN...");
                 // Create a fallback script element
                 var fallbackScript = document.createElement('script');
-                fallbackScript.src = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js";
+                fallbackScript.src = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js";
                 fallbackScript.onload = function() {
                     console.log("Fallback FFmpeg loaded!");
                     // Now load your script
