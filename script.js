@@ -166,8 +166,10 @@ function initializeApp(createFFmpeg, fetchFile) {
             console.log('JSON parsed successfully.');
 
             // Basic validation
-            if (!editData.clips || !Array.isArray(editData.clips) || !editData.video?.media?.video?.duration || !editData.video?.media?.video?.timecode?.rate?.timebase) {
-                throw new Error("Invalid JSON format. Missing required fields (clips array, video.media.video.duration, video.media.video.timecode.rate.timebase).");
+            if (!editData.clips || !Array.isArray(editData.clips) || 
+                !editData.video?.file?.media?.video?.duration || 
+                !editData.video?.file?.media?.video?.timecode?.rate?.timebase) {
+                throw new Error("Invalid JSON format. Missing required fields (clips array, video.file.media.video.duration, video.file.media.video.timecode.rate.timebase).");
             }
             console.log('JSON validation passed.');
             statusDiv.textContent = 'Video & JSON loaded.';
@@ -261,8 +263,8 @@ function initializeApp(createFFmpeg, fetchFile) {
 
         try {
             const mode = modeKeepRadio.checked ? 'keep' : 'remove';
-            const frameRate = editData.video.media.video.timecode.rate.timebase;
-            const totalDurationFrames = editData.video.media.video.duration;
+            const frameRate = editData.video.file.media.video.timecode.rate.timebase;
+            const totalDurationFrames = editData.video.file.media.video.duration;
 
             if (!frameRate || typeof frameRate !== 'number' || frameRate <= 0) {
                 throw new Error(`Invalid frame rate (${frameRate}) in JSON data.`);
