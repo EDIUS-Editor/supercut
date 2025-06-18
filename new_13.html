@@ -1,0 +1,3074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Supercut and Marker Video Editor</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.2/themes/base/jquery-ui.min.css" rel="stylesheet">
+    <style>
+        /* CSS Variables for consistent colors and values */
+        :root {
+            --primary-color: #2196F3;
+            --primary-dark: #1976D2;
+            --secondary-color: #4CAF50;
+            --secondary-dark: #43A047;
+            --light-bg: #f8f9fa;
+            --lighter-bg: #e9ecef;
+            --timeline-bg: #d0d0d0; /* Light grey for timeline background */
+            --border-radius: 4px;
+            --transition-speed: 0.2s;
+            --transcript-tab-bg: #e8e8e8; /* Light grey for transcript tab */
+        }
+
+        /* Base container and components */
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow-x: hidden;
+            margin: 0;
+        }
+        
+        .main-wrapper {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 1200px;
+            width: 100%;
+            max-height: 95vh;
+            overflow-y: auto;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .video-container {
+            width: 100%;
+            padding: 0;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+        
+        .video-controls, .marker-item { 
+            background: var(--light-bg); 
+            border-radius: var(--border-radius); 
+            padding: 10px; 
+            margin: 10px 0; 
+            width: 100%;
+        }
+
+        /* Video styling */
+        .video-wrapper { 
+            position: relative; 
+            margin-bottom: 15px; 
+            width: 100%;
+        }
+        
+        #my_video {
+            width: 100%;
+            background: #000;
+            border-radius: var(--border-radius);
+            display: block;
+        }
+
+        /* Subtitle display styling */
+        .subtitle-display {
+            position: absolute;
+            bottom: 70px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: white;
+            text-shadow: 0px 0px 3px #000;
+            font-size: 18px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 10;
+            max-width: 90%;
+            margin: 0 auto;
+            border-radius: 4px;
+        }
+
+        /* Timeline elements */
+        .timeline-wrapper {
+            position: relative;
+            margin: 10px 0;
+            height: 40px;
+            width: 100%;
+        }
+        
+        #timeline, .time-slider-wrapper {
+            position: relative;
+            height: 20px;
+            background: var(--timeline-bg); /* Using the light grey color variable */
+            border-radius: var(--border-radius);
+            margin: 10px 0;
+            width: 100%;
+        }
+        
+        .timeline-wrapper { 
+            height: 40px; 
+        }
+        
+        .time-slider-wrapper { 
+            margin-bottom: 20px; 
+            width: 100%;
+        }
+
+        /* Playhead and selection styles */
+        .timeline-selection, .playhead {
+            position: absolute;
+            height: 100%;
+            pointer-events: none;
+            border-radius: var(--border-radius);
+        }
+        
+        .timeline-selection {
+            background: rgba(33, 150, 243, 0.3);
+        }
+        
+        .playhead {
+            top: 0;
+            width: 2px;
+            height: 28px;
+            background: var(--primary-color);
+            transform: translateX(-50%);
+            cursor: ew-resize;
+            z-index: 3;
+        }
+        
+        .playhead::before {
+            content: '';
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            width: 10px;
+            height: 10px;
+            background: var(--primary-color);
+            border-radius: 50%;
+        }
+
+        /* Slider styles consolidated */
+        #time-slider.ui-slider {
+            background: var(--timeline-bg); /* Using the light grey color variable */
+            border: none;
+            border-radius: var(--border-radius);
+            width: 100%;
+        }
+        
+        #time-slider .ui-slider-range {
+            background: var(--secondary-color);
+            position: absolute;
+            z-index: 1;
+            cursor: move;
+            border-radius: 2px;
+        }
+        
+        #time-slider .ui-slider-handle {
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            top: -4px;
+            margin-left: -8px;
+            background: var(--primary-color);
+            border: 2px solid #fff;
+            cursor: ew-resize;
+            z-index: 2;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        /* Time info displays */
+        .time-info {
+            display: flex;
+            gap: 15px;
+            font-family: monospace;
+            font-size: 14px;
+            margin: 5px 0;
+            flex-wrap: wrap;
+        }
+
+        /* Drop zone styling */
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: var(--border-radius);
+            padding: 20px;
+            text-align: center;
+            transition: border var(--transition-speed) ease-in-out;
+            margin-bottom: 20px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.8);
+        }
+        
+        .drop-zone.drag-over {
+            border-color: var(--primary-color);
+            background-color: rgba(33, 150, 243, 0.1);
+        }
+        
+        .drop-zone p {
+            margin: 0;
+            color: #666;
+        }
+
+        /* Button styling */
+        .btn {
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            width: 100%;
+        }
+        
+        .btn-group .btn {
+            flex: 1 1 auto;
+            min-width: fit-content;
+        }
+        
+        .frame-step {
+            padding: 4px 6px;
+            font-size: 12px;
+            min-width: 40px;
+        }
+        
+        /* NEW: Repeat button styling */
+        #repeat-play.active {
+            background-color: var(--primary-dark);
+            border-color: var(--primary-dark);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* Transcript styling */
+        .subtitle-list {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            resize: vertical;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            width: 100%;
+        }
+        
+        .subtitle-item {
+            padding: 5px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            width: 100%;
+        }
+        
+        .subtitle-item:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .subtitle-item.active, .transcript-segment.active {
+            background-color: #e0f0ff;
+            border-radius: 4px;
+        }
+        
+        .time-stamp {
+            color: #666;
+            font-size: 12px;
+            margin-right: 10px;
+            display: inline-block;
+        }
+        
+        .transcript-segment {
+            margin-bottom: 8px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+            width: 100%;
+        }
+        
+        .transcript-word {
+            cursor: pointer;
+            padding: 2px 0;
+            margin: 0 1px;
+            display: inline-block;
+        }
+        
+        .transcript-word:hover {
+            background-color: #f0f0f0;
+            border-radius: 3px;
+        }
+        
+        .word-active {
+            background-color: #e0f0ff;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+        
+        .search-match {
+            background-color: #ffff99;
+            border-radius: 3px;
+        }
+        
+        .current-match {
+            background-color: #ffa500 !important;
+            font-weight: bold;
+            border-radius: 3px;
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .search-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+            width: 100%;
+        }
+
+        /* NEW: Container for search padding checkbox */
+        .search-options {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 5px;
+            background-color: var(--lighter-bg);
+            border-radius: var(--border-radius);
+            margin-top: -10px;
+            margin-bottom: 10px;
+        }
+        
+        .search-box {
+            flex: 1 1 auto;
+            min-width: 150px;
+            width: 100%;
+            position: relative;
+        }
+        
+        .search-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .search-clear-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            font-size: 16px;
+            color: #666;
+            cursor: pointer;
+            padding: 2px;
+            display: none;
+            z-index: 10;
+        }
+        
+        .search-clear-btn:hover {
+            color: #333;
+        }
+        
+        .search-navigation {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Marker styles */
+        .marker-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color var(--transition-speed);
+            width: 100%;
+        }
+        
+        .marker-item.active {
+            background: #e3f2fd;
+            border-left: 3px solid var(--primary-color);
+        }
+        
+        .marker-label { 
+            cursor: pointer; 
+            flex: 1;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+        
+        .marker-actions { 
+            display: flex; 
+            gap: 5px; 
+            flex-wrap: nowrap;
+        }
+
+        /* Form elements */
+        .form-control, .form-select {
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            transition: all 0.2s ease;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(33, 150, 243, 0.25);
+        }
+        
+        .input-group {
+            width: 100%;
+        }
+        
+        .input-group > .form-control,
+        .input-group > .btn {
+            min-height: 38px;
+        }
+        
+        /* Create marker from subtitle button */
+        .create-marker-from-subtitle {
+            font-size: 14px;
+            padding: 2px 6px;
+            color: #fff;
+            background-color: var(--secondary-color);
+            border: none;
+            border-radius: var(--border-radius);
+            margin-left: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            min-width: 30px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .create-marker-from-subtitle:hover {
+            background-color: var(--secondary-dark);
+        }
+        
+        .info-text {
+            color: #666;
+            font-style: italic;
+        }
+        
+        /* Tab styling */
+        .nav-tabs {
+            width: 100%;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .nav-tabs .nav-link {
+            margin-bottom: -1px;
+            border: 1px solid transparent;
+            border-top-left-radius: 0.25rem;
+            border-top-right-radius: 0.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .nav-tabs .nav-link.active {
+            color: #495057;
+            background-color: #fff;
+            border-color: #dee2e6 #dee2e6 #fff;
+        }
+        
+        /* Transcript tab specific styling */
+        .nav-tabs .nav-link#transcript-tab {
+            background-color: var(--transcript-tab-bg);
+            color: #666;
+        }
+        
+        .nav-tabs .nav-link#transcript-tab.active {
+            background-color: #fff;
+            color: #495057;
+        }
+        
+        .nav-tabs .nav-link#transcript-tab:hover:not(.active) {
+            background-color: #ddd;
+        }
+        
+        .tab-content {
+            width: 100%;
+        }
+        
+        .tab-pane {
+            width: 100%;
+        }
+
+        /* Header styling */
+        h2 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: 600;
+        }
+
+        h5 {
+            color: #555;
+            font-weight: 500;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+                align-items: flex-start;
+            }
+            
+            .main-wrapper {
+                padding: 20px;
+                border-radius: 15px;
+                max-height: none;
+                min-height: 100vh;
+            }
+            
+            .subtitle-display {
+                font-size: 16px;
+                padding: 8px;
+                bottom: 60px;
+            }
+            
+            .btn-group {
+                justify-content: center;
+            }
+            
+            .subtitle-list {
+                height: 150px;
+            }
+            
+            #timeline, #time-slider {
+                height: 24px;
+            }
+            
+            .playhead {
+                height: 32px;
+            }
+            
+            .playhead::before {
+                width: 14px;
+                height: 14px;
+            }
+            
+            /* Ensure buttons fit their text */
+            .btn {
+                padding-left: 8px;
+                padding-right: 8px;
+                font-size: 14px;
+            }
+            
+            /* Ensure form controls expand properly */
+            .d-flex {
+                width: 100%;
+            }
+            
+            /* Adjust marker actions to not wrap */
+            .marker-actions {
+                white-space: nowrap;
+                flex-shrink: 0;
+            }
+            
+            .marker-actions .btn {
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+        }
+
+        /* Small mobile devices */
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+            }
+            
+            .main-wrapper {
+                padding: 15px;
+                border-radius: 10px;
+            }
+            
+            .subtitle-display {
+                font-size: 14px;
+                padding: 5px;
+                bottom: 50px;
+            }
+            
+            /* Stack layouts for very small screens */
+            .d-flex {
+                flex-direction: column;
+            }
+            
+            .d-flex.flex-wrap {
+                flex-direction: row;
+            }
+            
+            .d-flex > * {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            
+            /* Override for specific flexbox elements */
+            .search-navigation,
+            .marker-actions,
+            .time-info {
+                flex-direction: row;
+                width: 100%;
+            }
+            
+            /* Better touch targets */
+            .btn, 
+            .form-control,
+            .ui-slider-handle {
+                min-height: 44px;
+            }
+            
+            .frame-step {
+                width: auto;
+                min-width: 36px;
+            }
+            
+            .marker-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .marker-actions {
+                margin-top: 8px;
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            /* Increase slider handle size */
+            #time-slider .ui-slider-handle {
+                width: 22px;
+                height: 22px;
+                top: -8px;
+                margin-left: -11px;
+            }
+            
+            .btn-group {
+                gap: 5px;
+            }
+            
+            .btn-group .btn {
+                flex: 1 1 calc(50% - 5px);
+            }
+        }
+		
+		.marker-subtitle {
+		padding: 8px;
+		background-color: #f8f9fa;
+		border-radius: 4px;
+		margin-top: 5px;
+		max-height: 60px;
+		overflow-y: auto;
+		font-size: 0.9rem;
+		width: 100%;
+		border-left: 3px solid #e9ecef;
+	}
+
+	.edit-marker {
+		background-color: #17a2b8;
+		border-color: #17a2b8;
+		color: white;
+	}
+
+	.edit-marker:hover {
+		background-color: #138496;
+		border-color: #117a8b;
+	}
+
+	.marker-edit-form {
+		padding: 10px;
+		background-color: #f8f9fa;
+		border-radius: 4px;
+		margin-top: 5px;
+		border-left: 3px solid var(--primary-color);
+	}
+
+	.marker-item {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.marker-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+	}
+
+	@media (max-width: 480px) {
+		.marker-subtitle {
+			font-size: 0.85rem;
+			padding: 5px;
+		}
+		
+		.marker-edit-form textarea {
+			font-size: 0.85rem;
+		}
+	}
+	
+    /* Peaks.js Waveform Styling */
+    #waveform-view-container {
+        width: 100%;
+        height: 80px;
+        background: #f5f5f5;
+        border-radius: 5px;
+        margin: 15px 0;
+        transition: opacity 0.5s ease-in-out;
+        opacity: 0;
+    }
+
+    /* Style for the playhead line in Peaks.js */
+    .peaks-playhead-line {
+        stroke: #e74c3c !important; /* Use important to override inline styles */
+        stroke-width: 2px !important;
+    }
+
+    /* Style for marker segments */
+    .peaks-segment-selected-label, .peaks-segment-label {
+        fill: white !important;
+    }
+    
+    #waveform-message {
+        display: none;
+        margin: 10px 0;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        text-align: center;
+    }
+    
+    #loading-indicator {
+        display: none;
+        color: #4285f4;
+        margin: 10px 0;
+        text-align: center;
+    }
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="container">
+            <div class="video-container">
+                <h2 class="my-3 text-center">Supercut and Marker Video Editor</h2>
+                
+                <div class="drop-zone" id="file-drop-zone">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label for="video-upload" class="form-label">Video File:</label>
+                            <input type="file" id="video-upload" accept="video/*" class="form-control">
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="subtitle-file" class="form-label">Subtitle File:</label>
+                            <input type="file" id="subtitle-file" accept=".srt,.vtt,.txt" class="form-control">
+                            <small class="text-muted">(Supports SRT and WebVTT formats)</small>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="json-upload" class="form-label">Markers JSON (optional):</label>
+                            <input type="file" id="json-upload" accept=".json" class="form-control">
+                        </div>
+                    </div>
+                    <p class="mt-3">or drag and drop files here</p>
+                </div>
+                
+                <div class="d-flex flex-wrap align-items-center my-2 justify-content-start">
+                    <div class="d-flex align-items-center me-3">
+                        <label class="me-1 small">Play to detect - </label>
+                        <span id="detected-fps" class="text-muted small"></span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <label for="framerate-select" class="me-1 small"><b>ALWAYS CHECK THE FRAMERATE:</b></label>
+                        <select id="framerate-select" class="form-select form-select-sm" style="width: auto; min-width: 70px;">
+                            <option value="23.976">23.976</option>
+                            <option value="24">24</option>
+                            <option value="25">25</option>
+                            <option value="29.97" selected>29.97</option>
+                            <option value="30">30</option>
+                            <option value="50">50</option>
+                            <option value="59.94">59.94</option>
+                            <option value="60">60</option>
+                        </select>
+                    </div>
+                </div>
+                    
+                <div class="video-wrapper">
+                    <video id="my_video" controls playsinline></video>
+                    <div class="subtitle-display" id="current-subtitle"></div>
+                </div>
+
+                <div class="d-flex flex-wrap justify-content-between align-items-center my-2">
+                    <div class="d-flex align-items-center flex-grow-1">
+                        <div class="btn-group me-2">
+                            <button id="play-pause" class="btn btn-primary">Play</button>
+                            <button id="repeat-play" class="btn btn-secondary" title="Loop playback of selected range">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-repeat" viewBox="0 0 16 16">
+                                    <path d="M11 5.466V4H5a4 4 0 0 0-3.584 5.777.5.5 0 1 1-.896.446A5 5 0 0 1 5 3h6V1.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384l-2.36 1.966a.25.25 0 0 1-.41-.192Zm3.81 2.088a.5.5 0 0 1 .67.225A5 5 0 0 1 11 13H5v1.466a.25.25 0 0 1-.41.192l-2.36-1.966a.25.25 0 0 1 0-.384l2.36-1.966a.25.25 0 0 1 .41.192V12h6a4 4 0 0 0 3.585-5.777.5.5 0 0 1 .225-.67Z"/>
+                                </svg>
+                            </button>
+                            <button id="stop" class="btn btn-secondary">⏹︎</button>
+                            <button id="frame-back" class="btn btn-outline-secondary frame-step">◀</button>
+                            <button id="frame-forward" class="btn btn-outline-secondary frame-step">▶</button>
+                        </div>
+                    </div>
+                    
+                    <div class="time-info ms-auto">
+                        <span id="current-time">00:00:00:00</span>
+                        <span>/</span>
+                        <span id="duration-time">00:00:00:00</span>
+                    </div>
+                </div>
+
+                <div class="timeline-wrapper">
+                    <div id="timeline"></div>
+                    <div class="playhead" id="main-playhead"></div>
+                </div>
+
+                <div class="time-info my-2 d-flex flex-wrap justify-content-center justify-content-md-start">
+                    <span id="selection-time" class="me-3">Selection: 00:00:00:00 - 00:00:00:00</span>
+                    <span id="selection-duration">Duration: 00:00:00:00</span>
+                </div>
+
+                <div class="time-slider-wrapper">
+                    <div id="time-slider"></div>
+                </div>
+                
+                <div id="waveform-message"></div>
+                <div id="loading-indicator">Processing audio, please wait...</div>
+                <div id="waveform-view-container" style="display: none;"></div>
+
+                <div class="d-flex justify-content-center align-items-center my-3">
+                    <button id="generate-waveform" class="btn btn-info" disabled>Try Waveform View</button>
+                    <span id="waveform-status" class="ms-3 text-muted"></span>
+                </div>
+
+    			<h5 class="text-center my-3">Precise Range Duration</h5>
+    			<div class="row g-3 mb-3">
+    				<div class="col-12 col-xl-4">
+    					<div class="input-group d-flex flex-nowrap" id="custom-duration-input">
+    						<input type="number" id="minutes-input" class="form-control" min="0" value="0" style="min-width:40px; max-width:70px;">
+    						<span class="input-group-text">mins</span>
+    						<span class="input-group-text">:</span>
+    						<input type="number" id="seconds-input" class="form-control" min="0" max="59" value="0" style="min-width:40px; max-width:70px;">
+    						<span class="input-group-text">secs</span>
+    						<span class="input-group-text">:</span>
+    						<input type="number" id="frames-input" class="form-control" min="0" value="0" style="min-width:40px; max-width:70px;">
+    						<span class="input-group-text">frames</span>
+    					</div>
+    				</div>
+    				<div class="col-12 col-xl-4">
+    					<select id="playhead-position" class="form-select">
+    						<option value="in" selected>Set duration with In Point at Playhead</option>
+    						<option value="out">Set duration with Out Point at Playhead</option>
+    						<option value="mid">Set duration with Mid Point at Playhead</option>
+    					</select>
+    				</div>
+    				<div class="col-12 col-xl-4">
+    					<button id="reset-zoom" class="btn btn-warning w-100">Reset</button>
+    				</div>
+    			</div>
+
+                <ul class="nav nav-tabs" id="content-tabs" role="tablist">
+    						<li class="nav-item" role="presentation">
+    							<button class="nav-link active" id="markers-tab" data-bs-toggle="tab" data-bs-target="#markers-content" type="button" role="tab">Markers</button>
+    						</li>
+    						<li class="nav-item" role="presentation">
+    							<button class="nav-link" id="transcript-tab" data-bs-toggle="tab" data-bs-target="#transcript-content" type="button" role="tab">Transcript</button>
+    						</li>
+    					</ul>
+
+    					<div class="tab-content" id="content-tabs-content">
+    						<div class="tab-pane fade show active" id="markers-content" role="tabpanel">
+    							<div class="d-flex flex-wrap justify-content-between align-items-center my-3">
+    								<button id="set-in-point" class="btn btn-success mb-2 mb-lg-0 me-2" title="Set IN point at current position (I)">IN</button>
+    								<button id="set-out-point" class="btn btn-danger mb-2 mb-lg-0 me-2" title="Set OUT point at current position (O)">OUT</button>
+    								<button id="add-marker" class="btn btn-success mb-2 mb-lg-0 me-2">Add Marker Range</button>
+    								<button id="save-json" class="btn btn-primary mb-2 mb-lg-0">Save Markers to JSON</button>
+    							</div>
+
+    							<div class="form-group my-3">
+    								<label for="custom-path" class="form-label">Path for video files in JSON:</label>
+    								<div class="input-group mb-2">
+    									<input type="text" id="custom-path" class="form-control" placeholder="e.g., C:/Projects/MyVideo/">
+    									<button id="save-path" class="btn btn-outline-secondary">Save Path</button>
+    								</div>
+    								<select id="saved-paths" class="form-select">
+    									<option value="">-- Select saved path --</option>
+    								</select>
+    							</div>
+
+    							<div id="markers-list" class="mt-3"></div>
+    						</div>
+    						
+    						<div class="tab-pane fade" id="transcript-content" role="tabpanel">
+    							<div class="transcript-container">
+    								<div class="search-container my-3">
+    									<div class="search-box d-flex">
+    										<div class="search-input-wrapper flex-grow-1">
+    											<input type="text" id="search-box" class="form-control" placeholder="Search subtitles...">
+    											<button class="search-clear-btn" id="search-clear-btn" title="Clear search">×</button>
+    										</div>
+    										<button id="add-search-markers" class="btn btn-success ms-2" title="Add all search results as markers" style="display: none;">
+    											Add as markers
+    										</button>
+    									</div>
+    									<div class="search-navigation" id="search-navigation" style="display: none;">
+    										<span id="search-count" class="text-muted me-2">0 results</span>
+    										<button id="prev-match" class="btn btn-sm btn-outline-secondary me-1" title="Previous match">↑</button>
+    										<button id="next-match" class="btn btn-sm btn-outline-secondary" title="Next match">↓</button>
+    									</div>
+    								</div>
+
+                                    <div class="search-options">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" value="" id="apply-search-padding">
+                                            <label class="form-check-label" for="apply-search-padding">
+                                                Apply Padding to Search Markers
+                                            </label>
+                                        </div>
+                                        <small class="text-muted ms-auto" id="padding-info" style="display: none;">(Uses the 'Precise Range Duration' settings above)</small>
+                                    </div>
+    								
+    								<div class="subtitle-list" id="subtitle-list">
+    									<p class="info-text">Load a video and subtitle file to see the transcript here.</p>
+    								</div>
+    							</div>
+    						</div>
+    					</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+                
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.2/jquery-ui.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/konva@9/konva.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/waveform-data@4.3.0/dist/waveform-data.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peaks.js@3.2.0/dist/peaks.js"></script>
+    <script>
+    // Wait for DOM to be fully loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize jQuery after DOM is ready
+        $(function() {
+            // ---------- 1. CACHED DOM REFERENCES ----------
+            // Original elements
+            const video = document.getElementById('my_video');
+            const fileInput = document.getElementById('video-upload');
+            const jsonInput = document.getElementById('json-upload');
+            const playPauseBtn = document.getElementById('play-pause');
+            const stopBtn = document.getElementById('stop');
+            const frameBackBtn = document.getElementById('frame-back');
+            const frameForwardBtn = document.getElementById('frame-forward');
+            const framerateSelect = document.getElementById('framerate-select');
+            const currentTimeDisplay = document.getElementById('current-time');
+            const durationTimeDisplay = document.getElementById('duration-time');
+            const mainPlayhead = document.getElementById('main-playhead');
+            const selectionTimeDisplay = document.getElementById('selection-time');
+            const selectionDurationDisplay = document.getElementById('selection-duration');
+            const resetZoomBtn = document.getElementById('reset-zoom');
+            const markersList = document.getElementById('markers-list');
+            const addMarkerBtn = document.getElementById('add-marker');
+            const saveJsonBtn = document.getElementById('save-json');
+            const dropZone = document.getElementById('file-drop-zone');
+            const playheadPositionSelect = document.getElementById('playhead-position');
+            const customDurationInput = document.getElementById('custom-duration-input');
+            const framesInput = document.getElementById('frames-input');
+            const minutesInput = document.getElementById('minutes-input');
+            const secondsInput = document.getElementById('seconds-input');
+            const customPathInput = document.getElementById('custom-path');
+            const savePathBtn = document.getElementById('save-path');
+            const savedPathsSelect = document.getElementById('saved-paths');
+            const detectedFpsDisplay = document.getElementById('detected-fps');
+            
+            // Subtitle & Search elements
+            const subtitleFileInput = document.getElementById('subtitle-file');
+            const currentSubtitleDisplay = document.getElementById('current-subtitle');
+            const searchBox = document.getElementById('search-box');
+            const searchClearBtn = document.getElementById('search-clear-btn')
+            const subtitleList = document.getElementById('subtitle-list');
+            const prevMatchButton = document.getElementById('prev-match');
+            const nextMatchButton = document.getElementById('next-match');
+            const searchNavigation = document.getElementById('search-navigation');
+            
+            // Waveform elements
+            const generateWaveformButton = document.getElementById('generate-waveform');
+            const waveformViewContainer = document.getElementById('waveform-view-container');
+            const waveformMessage = document.getElementById('waveform-message');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const waveformStatus = document.getElementById('waveform-status'); // NEW
+
+            // NEW elements for new features
+            const repeatBtn = document.getElementById('repeat-play');
+            const applySearchPaddingCheckbox = document.getElementById('apply-search-padding');
+            const paddingInfoText = document.getElementById('padding-info');
+            
+            // Cache jQuery objects
+            const $timeline = $("#timeline");
+            const $timeSlider = $("#time-slider");
+            const $timelineSelection = $('<div class="timeline-selection"></div>');
+            $timeline.append($timelineSelection);
+
+            // ---------- 2. STATE VARIABLES ----------
+            // Original state variables
+            let originalFileName = '';
+            let originalFilePath = '';
+            let currentVideoUrl = null;
+            let frameRate = 29.97;
+            let frameStep = 1 / frameRate;
+            let markers = [];
+            let currentSelection = { start: 0, end: 0 };
+            let isPlayheadDragging = false;
+            let isDraggingInHandle = false;
+            let isDraggingOutHandle = false;
+            let zoomStart = 0;
+            let zoomEnd = 100;
+            let animationFrame;
+            let activeMarkerIndex = -1;
+			let isDraggingRange = false;
+			let rangeWidth = 0;
+			let startOffset = 0;
+			let lastActiveHandle = 'in'; // Default to 'in' handle
+            
+            // FPS detection variables
+            let last_media_time, last_frame_num, detected_fps;
+            let fps_rounder = [];
+            let frame_not_seeked = true;
+            let audioContext = null;
+            let audioInfo = {
+                samplerate: null,
+                channelcount: null
+            };
+            
+            // Subtitle state variables
+            let subtitles = [];
+            let currentSubtitleIndex = -1;
+            let subtitleFormat = "srt"; // Can be "srt" or "vtt" 
+            let wordTimings = []; // For word-level timestamps
+            let searchMatches = []; // For storing search matches
+            let currentMatchIndex = -1; // Current position in search matches
+            
+            // Waveform state variables
+            let peaksInstance = null;
+            let currentVideoFile = null; // Store the current video file for Peaks.js
+
+            // NEW state variables
+            let isLooping = false;
+
+			// ---------- SEARCH CLEAR FUNCTIONALITY ----------
+            // Show/hide clear button based on search input
+            function updateSearchClearButton() {
+                if (searchBox.value.trim()) {
+                    searchClearBtn.style.display = 'block';
+                } else {
+                    searchClearBtn.style.display = 'none';
+                    }
+            }
+                
+            // Clear search functionality
+            function clearSearch() {
+                searchBox.value = '';
+                updateSearchClearButton();
+                filterSubtitles(); // This will clear the search and show all results
+            }
+                
+            // Event listeners for search clear functionality
+            searchBox.addEventListener('input', updateSearchClearButton);
+            searchClearBtn.addEventListener('click', clearSearch);
+                            
+            // ---------- 3. UTILITY FUNCTIONS ----------
+            // Convert time string to seconds
+            function timeToSeconds(timeString) {
+                if (typeof timeString === 'number') {
+                    return timeString; // Already in seconds
+                }
+                
+                // For SRT format (00:00:00,000)
+                if (timeString.includes(',')) {
+                    const [time, milliseconds] = timeString.split(',');
+                    const [hours, minutes, seconds] = time.split(':').map(Number);
+                    return hours * 3600 + minutes * 60 + seconds + parseInt(milliseconds) / 1000;
+                }
+                
+                // For WebVTT format (00:00:00.000)
+                return parseTimestamp(timeString);
+            }
+            
+            // Parse WebVTT timestamp to seconds
+            function parseTimestamp(timestamp) {
+                // Handle HH:MM:SS.mmm format
+                const match = timestamp.match(/(\d+):(\d+):(\d+)\.(\d+)/);
+                if (match) {
+                    const hours = parseInt(match[1], 10);
+                    const minutes = parseInt(match[2], 10);
+                    const seconds = parseInt(match[3], 10);
+                    const milliseconds = parseInt(match[4], 10);
+                    return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+                }
+                
+                // Handle MM:SS.mmm format
+                const shortMatch = timestamp.match(/(\d+):(\d+)\.(\d+)/);
+                if (shortMatch) {
+                    const minutes = parseInt(shortMatch[1], 10);
+                    const seconds = parseInt(shortMatch[2], 10);
+                    const milliseconds = parseInt(shortMatch[3], 10);
+                    return minutes * 60 + seconds + milliseconds / 1000;
+                }
+                
+                return 0;
+            }
+            
+            // Debounce function to limit rapid firing of events
+            function debounce(func, wait) {
+                let timeout;
+                return function(...args) {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => func.apply(this, args), wait);
+                };
+            }
+            
+            // Calculate frame rate average
+            function get_fps_average() {
+                return fps_rounder.reduce((a, b) => a + b) / fps_rounder.length;
+            }
+
+            // Find closest standard frame rate to detected rate
+            function findClosestFrameRate(detected_fps) {
+                const frameRates = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+                return frameRates.reduce((prev, curr) => {
+                    return Math.abs(curr - detected_fps) < Math.abs(prev - detected_fps) ? curr : prev;
+                });
+            }
+
+            // Convert seconds to SMPTE timecode
+            function toSMPTE(seconds, frameRate) {
+                if (isNaN(seconds) || isNaN(frameRate)) {
+                    return "00:00:00:00";
+                }
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = Math.floor(seconds % 60);
+                const totalFrames = Math.floor((seconds * frameRate) % frameRate);
+                
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${totalFrames.toString().padStart(2, '0')}`;
+            }
+
+            // Format time with or without frames
+            function formatTime(seconds, includeFrames = false) {
+                if (includeFrames) {
+                    return toSMPTE(seconds, frameRate);
+                }
+                const duration = toSMPTE(seconds, frameRate);
+                const durationInSeconds = (seconds % 60).toFixed(2);
+                return `${duration} (${durationInSeconds}s)`;
+            }
+
+            // Format timestring for subtitle display
+            function formatTimeForDisplay(timeInSeconds) {
+                const minutes = Math.floor(timeInSeconds / 60);
+                const seconds = Math.floor(timeInSeconds % 60);
+                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            // ---------- 4. UI UPDATE FUNCTIONS ----------
+            // Update all time displays
+            function updateTimeDisplays() {
+                if (!video.duration) return;
+                
+                currentTimeDisplay.textContent = toSMPTE(video.currentTime, frameRate);
+                durationTimeDisplay.textContent = toSMPTE(video.duration, frameRate);
+                
+                selectionTimeDisplay.textContent = 
+                    `Selection: ${toSMPTE(currentSelection.start, frameRate)} - ${toSMPTE(currentSelection.end, frameRate)}`;
+                const selectionDur = currentSelection.end - currentSelection.start;
+                selectionDurationDisplay.textContent = 
+                    `Duration: ${toSMPTE(selectionDur, frameRate)}`;
+                
+                const timelinePosition = (video.currentTime / video.duration) * 100;
+                mainPlayhead.style.left = `${timelinePosition}%`;
+            }
+
+            // Update zoom levels and timeline display
+            function updateZoom(start, end, withPadding = true) {
+                const timelineStart = start;
+                const timelineEnd = end;
+                
+                if (withPadding) {
+                    const range = end - start;
+                    const padding = range * 0.1;
+                    start = Math.max(0, start - padding);
+                    end = Math.min(100, end + padding);
+                }
+                
+                zoomStart = start;
+                zoomEnd = end;
+                
+                $timelineSelection.css({
+                    left: `${timelineStart}%`,
+                    width: `${timelineEnd - timelineStart}%`
+                });
+                
+                const duration = video.duration || 0;
+                const currentStartPercent = ((currentSelection.start / duration) * 100 - start) / (end - start) * 100;
+                const currentEndPercent = ((currentSelection.end / duration) * 100 - start) / (end - start) * 100;
+                
+                $timeSlider.slider('values', [
+                    Math.max(0, Math.min(100, currentStartPercent)),
+                    Math.max(0, Math.min(100, currentEndPercent))
+                ]);
+            }
+
+            /**
+             * NEW FUNCTION: Sets the IN and OUT points and updates the UI.
+             * This is the core of the new functionality.
+             * @param {number} startTime - The start time in seconds for the selection.
+             * @param {number} endTime - The end time in seconds for the selection.
+             */
+            function setSelectionRange(startTime, endTime) {
+                if (!video.duration || startTime === undefined || endTime === undefined || startTime > endTime) {
+                    return;
+                }
+
+                // Set the global selection state
+                currentSelection.start = startTime;
+                currentSelection.end = endTime;
+
+                // Move the playhead to the beginning of the selection
+                video.currentTime = startTime;
+
+                // Calculate the positions on the main timeline (0-100%)
+                const startPercent = (startTime / video.duration) * 100;
+                const endPercent = (endTime / video.duration) * 100;
+
+                // Update the visual selection bar on the main timeline
+                $timelineSelection.css({
+                    left: `${startPercent}%`,
+                    width: `${endPercent - startPercent}%`
+                });
+
+                // Zoom the detailed timeline slider to focus on this new selection
+                updateZoom(startPercent, endPercent, true);
+
+                // Update all the text-based time displays (current time, selection duration, etc.)
+                updateTimeDisplays();
+            }
+			
+			// Implement the range dragging handler function
+			function handleRangeDrag(e) {
+				if (isDraggingRange) {
+					if (animationFrame) {
+						cancelAnimationFrame(animationFrame);
+					}
+					
+					animationFrame = requestAnimationFrame(() => {
+						const sliderWidth = $timeSlider.width();
+						const delta = ((e.pageX - startOffset) / sliderWidth) * 100;
+						startOffset = e.pageX;
+						
+						let [currentStart, currentEnd] = $timeSlider.slider('values');
+						let newStart = currentStart + delta;
+						let newEnd = newStart + rangeWidth;
+						
+						// Constrain to bounds
+						if (newStart < 0) {
+							newStart = 0;
+							newEnd = rangeWidth;
+						}
+						if (newEnd > 100) {
+							newEnd = 100;
+							newStart = 100 - rangeWidth;
+						}
+						
+						$timeSlider.slider('values', [newStart, newEnd]);
+						
+						const duration = video.duration || 0;
+						const zoomRange = zoomEnd - zoomStart;
+						const previousStart = currentSelection.start;
+						const previousEnd = currentSelection.end;
+						
+						// Calculate new selection times
+						currentSelection.start = (newStart / 100) * (duration * (zoomRange / 100)) + (duration * (zoomStart / 100));
+						currentSelection.end = (newEnd / 100) * (duration * (zoomRange / 100)) + (duration * (zoomStart / 100));
+						
+						// Update timeline selection
+						const startPercent = (currentSelection.start / duration) * 100;
+						const endPercent = (currentSelection.end / duration) * 100;
+						$timelineSelection.css({
+							left: `${startPercent}%`,
+							width: `${endPercent - startPercent}%`
+						});
+						
+						// Update playhead position based on context
+						const wasWithinSelection = (video.currentTime >= previousStart && video.currentTime <= previousEnd);
+						
+						if (!wasWithinSelection) {
+							video.currentTime = currentSelection.start;
+						} else {
+							const relativePosition = (video.currentTime - previousStart) / (previousEnd - previousStart);
+							video.currentTime = currentSelection.start + (relativePosition * (currentSelection.end - currentSelection.start));
+						}
+						
+						updateTimeDisplays();
+						updateCurrentSubtitle();
+					});
+					
+					e.preventDefault();
+				}
+			}
+			
+			$timeSlider.slider({
+				range: true,
+				min: 0,
+				max: 100,
+				values: [0, 100],
+				step: 0.1,
+				create: function() {
+					// Critical part: add mousedown handler to the range
+					$(this).find('.ui-slider-range').on('mousedown', function(e) {
+						isDraggingRange = true;
+						rangeWidth = $timeSlider.slider('values', 1) - $timeSlider.slider('values', 0);
+						startOffset = e.pageX;
+						e.stopPropagation();
+					});
+				},
+				start: function(event, ui) {
+					// Identify if we're dragging the in or out handle
+					isDraggingInHandle = ui.handleIndex === 0;
+					isDraggingOutHandle = ui.handleIndex === 1;
+					
+					// Remember which handle is active
+					if (isDraggingInHandle) {
+						lastActiveHandle = 'in';
+					} else if (isDraggingOutHandle) {
+						lastActiveHandle = 'out';
+					}
+					
+					if (!isDraggingRange) {
+						// Update video position based on handle
+						const duration = video.duration || 0;
+						const zoomRange = zoomEnd - zoomStart;
+						const handleTime = (ui.value / 100) * (duration * (zoomRange / 100)) + (duration * (zoomStart / 100));
+						video.currentTime = handleTime;
+					}
+				},
+				slide: function(event, ui) {
+					if (!isDraggingRange) {
+						const duration = video.duration || 0;
+						const zoomRange = zoomEnd - zoomStart;
+						currentSelection.start = (ui.values[0] / 100) * (duration * (zoomRange / 100)) + (duration * (zoomStart / 100));
+						currentSelection.end = (ui.values[1] / 100) * (duration * (zoomRange / 100)) + (duration * (zoomStart / 100));
+						
+						// Update timeline selection in real-time
+						const startPercent = (currentSelection.start / duration) * 100;
+						const endPercent = (currentSelection.end / duration) * 100;
+						$timelineSelection.css({
+							left: `${startPercent}%`,
+							width: `${endPercent - startPercent}%`
+						});
+						
+						// Update video position based on which handle is being dragged
+						if (isDraggingInHandle) {
+							video.currentTime = currentSelection.start;
+						} else if (isDraggingOutHandle) {
+							video.currentTime = currentSelection.end;
+						}
+						
+						updateTimeDisplays();
+						updateCurrentSubtitle();
+					}
+					return !isDraggingRange; // This prevents handle movement when dragging the range
+				},
+				stop: function() {
+					isDraggingInHandle = false;
+					isDraggingOutHandle = false;
+				}
+			});
+
+			$(document).on('mousemove', function(e) {
+				handlePlayheadDrag(e);
+				handleRangeDrag(e);
+			});
+
+			$(document).on('mouseup', function() {
+				isPlayheadDragging = false;
+				isDraggingRange = false; // Important: Reset range dragging flag
+				if (animationFrame) {
+					cancelAnimationFrame(animationFrame);
+				}
+			});
+
+            // Update markers list with the current markers
+            function updateMarkersList() {
+				markersList.innerHTML = markers.length ? '<h5 class="mt-3 mb-2">Markers:</h5>' : '';
+				
+				markers.forEach((marker, index) => {
+					const div = document.createElement('div');
+					div.className = 'marker-item';
+					div.setAttribute('data-index', index);
+					
+					if (index === activeMarkerIndex) {
+						div.classList.add('active');
+					}
+					
+					// Determine what text to display
+					const subtitleObj = marker.subtitles && marker.subtitles.length > 0 ? marker.subtitles[0] : null;
+					const displayText = subtitleObj ? subtitleObj.text : "";
+					
+					// Create marker header with timecodes and buttons
+					const headerDiv = document.createElement('div');
+					headerDiv.className = 'marker-header';
+					headerDiv.innerHTML = `
+						<span class="marker-label">Marker ${index + 1}: ${toSMPTE(marker.start, frameRate)} - ${toSMPTE(marker.end, frameRate)} (${toSMPTE(marker.duration, frameRate)})</span>
+						<div class="marker-actions">
+							<button class="btn btn-sm btn-primary me-1 load-marker" title="Load this marker">Load</button>
+							<button class="btn btn-sm btn-info me-1 edit-marker" title="Edit subtitle text">Edit</button>
+							<button class="btn btn-sm btn-danger remove-marker" title="Remove this marker">Remove</button>
+						</div>
+					`;
+					div.appendChild(headerDiv);
+					
+					// Add subtitle text display if it exists
+					if (displayText) {
+						const subtitleDiv = document.createElement('div');
+						subtitleDiv.className = 'marker-subtitle';
+						subtitleDiv.textContent = displayText;
+						div.appendChild(subtitleDiv);
+					}
+					
+					// Make the label clickable
+					headerDiv.querySelector('.marker-label').addEventListener('click', function() {
+						loadMarker(index);
+					});
+					
+					// Button event listeners
+					headerDiv.querySelector('.load-marker').addEventListener('click', function() {
+						loadMarker(index);
+					});
+					
+					headerDiv.querySelector('.edit-marker').addEventListener('click', function() {
+						editMarkerText(index, div);
+					});
+					
+					headerDiv.querySelector('.remove-marker').addEventListener('click', function() {
+						removeMarker(index);
+					});
+					
+					markersList.appendChild(div);
+				});
+
+                // After updating the list, update the segments on the waveform
+                updatePeaksSegments();
+			}
+			
+			function editMarkerText(index, markerElement) {
+				const marker = markers[index];
+				
+				// Check if we're already editing this marker
+				const existingForm = markerElement.querySelector('.marker-edit-form');
+				if (existingForm) {
+					markerElement.removeChild(existingForm);
+					return;
+				}
+				
+				// Get current subtitle text
+				const subtitleObj = marker.subtitles && marker.subtitles.length > 0 ? marker.subtitles[0] : null;
+				const currentText = subtitleObj ? subtitleObj.text : "";
+				
+				// Create edit form
+				const editForm = document.createElement('div');
+				editForm.className = 'marker-edit-form mt-2 w-100';
+				editForm.innerHTML = `
+					<div class="mb-2">
+						<label for="marker-text-${index}" class="form-label small">Subtitle Text</label>
+						<textarea class="form-control form-control-sm" id="marker-text-${index}" rows="3" placeholder="Enter subtitle text...">${currentText}</textarea>
+					</div>
+					<div class="d-flex justify-content-end">
+						<button class="btn btn-sm btn-secondary me-2 cancel-edit">Cancel</button>
+						<button class="btn btn-sm btn-primary save-edit">Save Changes</button>
+					</div>
+				`;
+				
+				// Add form to marker element
+				markerElement.appendChild(editForm);
+				
+				// Focus the text area
+				const textArea = document.getElementById(`marker-text-${index}`);
+				textArea.focus();
+				textArea.setSelectionRange(textArea.value.length, textArea.value.length);
+				
+				// Handle cancel button
+				editForm.querySelector('.cancel-edit').addEventListener('click', function() {
+					markerElement.removeChild(editForm);
+				});
+				
+				// Handle save button
+				editForm.querySelector('.save-edit').addEventListener('click', function() {
+					// Get text from form
+					const newText = document.getElementById(`marker-text-${index}`).value;
+					
+					// Update marker
+					if (newText.trim()) {
+						// If marker already has subtitles array
+						if (marker.subtitles && marker.subtitles.length > 0) {
+							marker.subtitles[0].text = newText;
+						} else {
+							// If no subtitles array, create one
+							marker.subtitles = [{
+								text: newText,
+								start: Math.round(marker.start * frameRate),
+								end: Math.round(marker.end * frameRate)
+							}];
+						}
+					} else {
+						// If text is empty, remove subtitles array
+						marker.subtitles = [];
+					}
+					
+					// Update the markers list to reflect changes
+					updateMarkersList();
+				});
+			}
+
+            // Update the current subtitle display based on video time
+            function updateCurrentSubtitle() {
+				if (!subtitles.length) return;
+				
+				const currentTime = video.currentTime;
+				
+				// Find the subtitle that corresponds to the current time
+				const index = subtitles.findIndex(subtitle => 
+					currentTime >= subtitle.startTime && currentTime <= subtitle.endTime
+				);
+				
+				// Update display only if the subtitle changed
+				if (index !== currentSubtitleIndex) {
+					currentSubtitleIndex = index;
+					
+					// Clear previous active states
+					const activeItems = subtitleList.querySelectorAll('.active');
+					activeItems.forEach(item => item.classList.remove('active'));
+					
+					if (index !== -1) {
+						// Display current subtitle
+						currentSubtitleDisplay.textContent = subtitles[index].text;
+						
+						if (subtitleFormat === "srt") {
+							// Highlight the current subtitle in the SRT list
+							const items = subtitleList.querySelectorAll('.subtitle-item');
+							if (items[index]) {
+								items[index].classList.add('active');
+								
+								// FIXED: Only scroll within subtitle list container, not the page
+								// Check if video is playing before scrolling
+								const isPlaying = !video.paused;
+								if (!isPlaying || document.activeElement !== video) {
+									scrollElementIntoViewIfNeeded(items[index], subtitleList);
+								}
+							}
+						} else if (subtitleFormat === "vtt") {
+							// Highlight the current segment in WebVTT transcript
+							const segments = subtitleList.querySelectorAll('.transcript-segment');
+							if (segments[index]) {
+								segments[index].classList.add('active');
+								
+								// FIXED: Only scroll within subtitle list container, not the page
+								// Check if video is playing before scrolling
+								const isPlaying = !video.paused;
+								if (!isPlaying || document.activeElement !== video) {
+									scrollElementIntoViewIfNeeded(segments[index], subtitleList);
+								}
+							}
+							
+							// Also highlight the current word if we have word-level timing
+							updateCurrentWord(currentTime);
+						}
+					} else {
+						currentSubtitleDisplay.textContent = '';
+					}
+				} else if (subtitleFormat === "vtt" && index !== -1) {
+					// Even if the subtitle hasn't changed, update the current word
+					updateCurrentWord(currentTime);
+				}
+			}
+			
+			// Custom scroll function that only scrolls the container, not the page
+			function scrollElementIntoViewIfNeeded(element, container) {
+				// Check if element is already in view
+				const containerRect = container.getBoundingClientRect();
+				const elementRect = element.getBoundingClientRect();
+				
+				// Check if element is fully visible in the container
+				const isInView = (
+					elementRect.top >= containerRect.top &&
+					elementRect.bottom <= containerRect.bottom
+				);
+				
+				// Only scroll if the element is not in view
+				if (!isInView) {
+					// Calculate the scroll offset to bring the element into view
+					const scrollTop = element.offsetTop - container.offsetTop - (containerRect.height / 2) + (elementRect.height / 2);
+					
+					// Smooth scroll only the container
+					container.scrollTo({
+						top: scrollTop,
+						behavior: 'smooth'
+					});
+				}
+			}
+						
+            // Update word highlighting (for WebVTT)
+            function updateCurrentWord(currentTime) {
+				// Remove previous active word class
+				const activeWords = subtitleList.querySelectorAll('.word-active');
+				activeWords.forEach(word => word.classList.remove('word-active'));
+				
+				// Find the current word
+				const words = subtitleList.querySelectorAll('.transcript-word');
+				let activeWordFound = false;
+				
+				words.forEach(word => {
+					const start = parseFloat(word.dataset.start);
+					const end = parseFloat(word.dataset.end);
+					
+					if (currentTime >= start && currentTime <= end) {
+						word.classList.add('word-active');
+						activeWordFound = true;
+						
+						// FIXED: Only scroll within subtitle list container, not the page
+						// Check if video is playing before scrolling
+						const isPlaying = !video.paused;
+						if (!isPlaying || document.activeElement !== video) {
+							scrollElementIntoViewIfNeeded(word, subtitleList);
+						}
+					}
+				});
+				
+				return activeWordFound;
+			} 
+             
+            // Update the paths dropdown
+            function updatePathDropdown() {
+                const savedPaths = JSON.parse(localStorage.getItem('customPaths') || '[]');
+                
+                // Clear existing options except first one
+                while (savedPathsSelect.options.length > 1) {
+                    savedPathsSelect.remove(1);
+                }
+                
+                // Add saved paths as options
+                savedPaths.forEach(path => {
+                    const option = document.createElement('option');
+                    option.value = path;
+                    option.textContent = path;
+                    savedPathsSelect.appendChild(option);
+                });
+            }
+            
+            // ---------- 5. SUBTITLE HANDLING FUNCTIONS ----------
+            // Handle subtitle file selection
+            function handleSubtitleSelect(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const content = e.target.result;
+                        
+                        // Detect file format
+                        if (file.name.endsWith('.vtt')) {
+                            subtitleFormat = "vtt";
+                            // Store original subtitle data
+                            window.originalVttContent = content;
+                            // Parse WebVTT
+                            subtitles = parseWebVTT(content);
+                            wordTimings = extractWordTimings(content);
+                            renderTranscript(content);
+                        } else {
+                            subtitleFormat = "srt";
+                            // Store original subtitle data
+                            window.originalSrtContent = content;
+                            subtitles = parseSRT(content);
+                            renderSubtitleList(subtitles);
+                        }
+                        
+                        // Show transcript tab after loading subtitles
+                        document.getElementById('transcript-tab').click();
+                    };
+                    reader.readAsText(file);
+                }
+            }
+            
+            // Parse SRT file content
+            function parseSRT(srtContent) {
+                const srtItems = [];
+                
+                // Split the content by double newline (subtitle separator)
+                const subtitleBlocks = srtContent.trim().split(/\r?\n\r?\n/);
+                
+                subtitleBlocks.forEach(block => {
+                    const lines = block.split(/\r?\n/);
+                    if (lines.length < 3) return; // Skip invalid blocks
+                    
+                    // First line is the index (ignore)
+                    // Second line is the time range
+                    const timeRange = lines[1];
+                    const timeMatch = timeRange.match(/(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/);
+                    
+                    if (!timeMatch) return; // Skip invalid time format
+                    
+                    const startTime = timeToSeconds(timeMatch[1]);
+                    const endTime = timeToSeconds(timeMatch[2]);
+                    
+                    // The rest are subtitle lines
+                    const textLines = lines.slice(2);
+                    const text = textLines.join(' ').trim();
+                    
+                    srtItems.push({
+                        startTime,
+                        endTime,
+                        text,
+                        startTimeString: formatTimeForDisplay(startTime)
+                    });
+                });
+                
+                return srtItems;
+            }
+            
+            // Parse WebVTT file content
+            function parseWebVTT(vttContent) {
+                const vttItems = [];
+                
+                // Split the content into lines
+                const lines = vttContent.split(/\r?\n/);
+                
+                // Skip the WEBVTT header
+                let inCue = false;
+                let currentCueStart = 0;
+                let currentCueEnd = 0;
+                let currentCueText = "";
+                
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    
+                    // Skip empty lines and WEBVTT header
+                    if (!line || line === 'WEBVTT') {
+                        continue;
+                    }
+                    
+                    // Check if this is a timestamp line (containing -->)
+                    if (line.includes('-->')) {
+                        // If we were in a cue before, push the previous cue
+                        if (inCue && currentCueText) {
+                            vttItems.push({
+                                startTime: currentCueStart,
+                                endTime: currentCueEnd,
+                                text: currentCueText.trim(),
+                                startTimeString: formatTimeForDisplay(currentCueStart)
+                            });
+                        }
+                        
+                        inCue = true;
+                        currentCueText = "";
+                        const timestamps = line.split('-->').map(t => t.trim());
+                        currentCueStart = parseTimestamp(timestamps[0]);
+                        currentCueEnd = parseTimestamp(timestamps[1]);
+                        continue;
+                    }
+                    
+                    // Skip numeric identifiers
+                    if (/^\d+$/.test(line)) {
+                        continue;
+                    }
+                    
+                    // If we're in a cue, process the text content
+                    if (inCue && line) {
+                        // Clean the text by removing both opening and closing tags
+                        const cleanLine = line.replace(/<\d\d:\d\d:\d\d\.\d\d\d>|<\/\d\d:\d\d:\d\d\.\d\d\d>/g, '');
+                        currentCueText += (currentCueText ? " " : "") + cleanLine;
+                    }
+                }
+                
+                // Add the last cue if needed
+                if (inCue && currentCueText) {
+                    vttItems.push({
+                        startTime: currentCueStart,
+                        endTime: currentCueEnd,
+                        text: currentCueText.trim(),
+                        startTimeString: formatTimeForDisplay(currentCueStart)
+                    });
+                }
+                
+                return vttItems;
+            }
+            
+            // Extract word-level timing from WebVTT file
+            function extractWordTimings(vttContent) {
+                const words = [];
+                
+                // Split the content into lines
+                const lines = vttContent.split(/\r?\n/);
+                let currentCueStart = 0;
+                let currentCueEnd = 0;
+                
+                // Process each line
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    
+                    // Skip empty lines and WEBVTT header
+                    if (!line || line === 'WEBVTT') {
+                        continue;
+                    }
+                    
+                    // Check if this is a timestamp line (containing -->)
+                    if (line.includes('-->')) {
+                        const timestamps = line.split('-->').map(t => t.trim());
+                        currentCueStart = parseTimestamp(timestamps[0]);
+                        currentCueEnd = parseTimestamp(timestamps[1]);
+                        continue;
+                    }
+                    
+                    // Skip numeric identifiers
+                    if (/^\d+$/.test(line)) {
+                        continue;
+                    }
+                    
+                    // Match pattern: <00:00:00.000>word</00:00:00.000>
+                    const wordMatches = line.match(/<(\d\d:\d\d:\d\d\.\d\d\d)>([^<]+)<\/\d\d:\d\d:\d\d\.\d\d\d>/g);
+                    
+                    if (wordMatches && wordMatches.length > 0) {
+                        for (let j = 0; j < wordMatches.length; j++) {
+                            const wordMatch = wordMatches[j];
+                            // Extract the timestamp and word text
+                            const timeMatch = wordMatch.match(/<(\d\d:\d\d:\d\d\.\d\d\d)>([^<]+)<\/\d\d:\d\d:\d\d\.\d\d\d>/);
+                            
+                            if (timeMatch && timeMatch.length >= 3) {
+                                const timeStr = timeMatch[1];
+                                const word = timeMatch[2].trim();
+                                const startTime = parseTimestamp(timeStr);
+                                
+                                // Calculate end time (use next word start or cue end)
+                                let endTime;
+                                if (j < wordMatches.length - 1) {
+                                    const nextTimeMatch = wordMatches[j+1].match(/<(\d\d:\d\d:\d\d\.\d\d\d)>/);
+                                    if (nextTimeMatch && nextTimeMatch.length >= 2) {
+                                        endTime = parseTimestamp(nextTimeMatch[1]);
+                                    } else {
+                                        endTime = currentCueEnd;
+                                    }
+                                } else {
+                                    endTime = currentCueEnd;
+                                }
+                                
+                                words.push({
+                                    text: word,
+                                    startTime,
+                                    endTime
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                return words;
+            }
+            
+            // Render the subtitle list for SRT format
+            function renderSubtitleList(subtitlesToRender) {
+                subtitleList.innerHTML = '';
+                
+                if (subtitlesToRender.length === 0) {
+                    subtitleList.innerHTML = '<p class="info-text">No subtitles found or match your search.</p>';
+                    return;
+                }
+                
+                subtitlesToRender.forEach((subtitle, index) => {
+                    const subtitleItem = document.createElement('div');
+                    subtitleItem.className = 'subtitle-item';
+                    subtitleItem.dataset.index = index;
+                    // Add start and end times to dataset for easy access
+                    subtitleItem.dataset.startTime = subtitle.startTime;
+                    subtitleItem.dataset.endTime = subtitle.endTime;
+                    
+                    subtitleItem.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="time-stamp">${subtitle.startTimeString}</span>
+                            <button class="create-marker-from-subtitle" title="Create marker from this subtitle">+</button>
+                        </div>
+                        <span class="subtitle-text">${subtitle.text}</span>
+                    `;
+                    
+                    // MODIFIED: Click to set IN/OUT points
+                    subtitleItem.addEventListener('click', (e) => {
+                         // Don't trigger if the 'add marker' button was clicked
+                        if(e.target.classList.contains('create-marker-from-subtitle')) return;
+                        
+                        setSelectionRange(subtitle.startTime, subtitle.endTime);
+                        video.pause();
+                    });
+                    
+                    // Add marker from subtitle
+                    subtitleItem.querySelector('.create-marker-from-subtitle').addEventListener('click', (e) => {
+                        e.stopPropagation(); // Prevent seeking
+                        createMarkerFromSubtitle(subtitle);
+                    });
+                    
+                    subtitleList.appendChild(subtitleItem);
+                });
+            }
+            
+            // Render the transcript for WebVTT with word-level timing
+            function renderTranscript(vttContent) {
+				subtitleList.innerHTML = '';
+				
+				if (wordTimings.length === 0) {
+					// If no word-level timing available, use subtitles
+					renderSubtitleList(subtitles);
+					return;
+				}
+				
+				const transcriptContainer = document.createElement('div');
+				transcriptContainer.className = 'json-transcript';
+				
+				// Create a container for each segment (reusing the JSON UI components)
+				let currentSegmentIndex = 0;
+				let segmentContainer = document.createElement('div');
+				segmentContainer.className = 'transcript-segment';
+				segmentContainer.dataset.index = currentSegmentIndex;
+
+                if (subtitles.length > 0) {
+                    segmentContainer.dataset.startTime = subtitles[0].startTime;
+                    segmentContainer.dataset.endTime = subtitles[0].endTime;
+                }
+				
+				// Add timestamp at the beginning of first segment
+				if (subtitles.length > 0) {
+					const timeStamp = document.createElement('span');
+					timeStamp.className = 'time-stamp';
+					timeStamp.textContent = formatTimeForDisplay(subtitles[0].startTime);
+					segmentContainer.appendChild(timeStamp);
+					
+					// Add create marker button
+					const createMarkerBtn = document.createElement('button');
+					createMarkerBtn.className = 'create-marker-from-subtitle float-end';
+					createMarkerBtn.title = 'Create marker from this segment';
+					createMarkerBtn.textContent = '+';
+					createMarkerBtn.dataset.segmentIndex = '0';
+					createMarkerBtn.addEventListener('click', function(e) {
+						e.stopPropagation();
+						const segmentIndex = parseInt(this.dataset.segmentIndex);
+						createMarkerFromSubtitle(subtitles[segmentIndex]);
+					});
+					segmentContainer.appendChild(createMarkerBtn);
+				}
+				
+				// Process each word
+				wordTimings.forEach((word, index) => {
+					// Find which segment this word belongs to
+					while (currentSegmentIndex < subtitles.length - 1 && 
+							word.startTime >= subtitles[currentSegmentIndex + 1].startTime) {
+						// Finish current segment
+						transcriptContainer.appendChild(segmentContainer);
+						
+						// Start new segment
+						currentSegmentIndex++;
+						segmentContainer = document.createElement('div');
+						segmentContainer.className = 'transcript-segment';
+						segmentContainer.dataset.index = currentSegmentIndex;
+                        segmentContainer.dataset.startTime = subtitles[currentSegmentIndex].startTime;
+                        segmentContainer.dataset.endTime = subtitles[currentSegmentIndex].endTime;
+						
+						// Add timestamp for the new segment
+						const timeStamp = document.createElement('span');
+						timeStamp.className = 'time-stamp';
+						timeStamp.textContent = formatTimeForDisplay(subtitles[currentSegmentIndex].startTime);
+						segmentContainer.appendChild(timeStamp);
+						
+						// Add create marker button
+						const createMarkerBtn = document.createElement('button');
+						createMarkerBtn.className = 'create-marker-from-subtitle float-end';
+						createMarkerBtn.title = 'Create marker from this segment';
+						createMarkerBtn.textContent = '+';
+						createMarkerBtn.dataset.segmentIndex = currentSegmentIndex.toString();
+						createMarkerBtn.addEventListener('click', function(e) {
+							e.stopPropagation();
+							const segmentIndex = parseInt(this.dataset.segmentIndex);
+							createMarkerFromSubtitle(subtitles[segmentIndex]);
+						});
+						segmentContainer.appendChild(createMarkerBtn);
+					}
+					
+					// Create word span
+					const wordSpan = document.createElement('span');
+					wordSpan.className = 'transcript-word';
+					wordSpan.textContent = word.text;
+					wordSpan.dataset.start = word.startTime;
+					wordSpan.dataset.end = word.endTime;
+					
+					// MODIFIED: Click handler to set IN/OUT range for the word
+					wordSpan.addEventListener('click', function(e) {
+                        e.stopPropagation();
+						setSelectionRange(word.startTime, word.endTime);
+						video.pause();
+					});
+					
+					segmentContainer.appendChild(wordSpan);
+					
+					// Add space after each word
+					if (index < wordTimings.length - 1) {
+						segmentContainer.appendChild(document.createTextNode(' '));
+					}
+				});
+
+                // Add click handler for the entire segment to select its range
+                transcriptContainer.querySelectorAll('.transcript-segment').forEach(seg => {
+                    seg.addEventListener('click', function(e) {
+                        // Only fire if the segment itself is clicked, not a word or button inside it
+                        if (e.target.classList.contains('transcript-word') || e.target.classList.contains('create-marker-from-subtitle')) return;
+                        
+                        const start = parseFloat(this.dataset.startTime);
+                        const end = parseFloat(this.dataset.endTime);
+                        setSelectionRange(start, end);
+                        video.pause();
+                    });
+                });
+				
+				// Add the final segment
+				if (segmentContainer.childNodes.length > 0) {
+					transcriptContainer.appendChild(segmentContainer);
+				}
+				
+				subtitleList.appendChild(transcriptContainer);
+			}
+            
+			function filterSubtitles() {
+				const searchTerm = searchBox.value.toLowerCase().trim();
+				
+				// Reset highlights and state
+                document.querySelectorAll('.search-match, .current-match').forEach(el => {
+                    el.classList.remove('search-match', 'current-match');
+                    const originalText = el.dataset.originalText;
+                    if (originalText) {
+                        el.innerHTML = originalText;
+                    }
+                });
+				searchMatches = [];
+				currentMatchIndex = -1;
+				updateSearchResultsUI();
+				
+				if (!searchTerm) {
+					if (subtitleFormat === "vtt") {
+                        subtitleList.querySelectorAll('.transcript-word').forEach(word => {
+                            word.classList.remove('search-match', 'current-match');
+                        });
+                    }
+					return;
+				}
+
+                let matchesFound = [];
+
+                if (subtitleFormat === 'vtt' && wordTimings.length > 0) {
+                    const allWords = Array.from(subtitleList.querySelectorAll('.transcript-word'));
+                    const searchWords = searchTerm.split(/\s+/);
+
+                    for (let i = 0; i <= allWords.length - searchWords.length; i++) {
+                        let potentialMatch = [];
+                        let fullMatch = true;
+                        for (let j = 0; j < searchWords.length; j++) {
+                            const wordElement = allWords[i + j];
+                            const wordText = wordElement.textContent.toLowerCase();
+                            if (wordText.includes(searchWords[j])) {
+                                potentialMatch.push(wordElement);
+                            } else {
+                                fullMatch = false;
+                                break;
+                            }
+                        }
+
+                        if (fullMatch) {
+                            let isContiguous = true;
+                            for (let k = 0; k < potentialMatch.length - 1; k++) {
+                                const end = parseFloat(potentialMatch[k].dataset.end);
+                                const start = parseFloat(potentialMatch[k+1].dataset.start);
+                                if (start - end > 1.0) {
+                                    isContiguous = false;
+                                    break;
+                                }
+                            }
+
+                            if(isContiguous) {
+                                matchesFound.push(potentialMatch);
+                                i += potentialMatch.length -1;
+                            }
+                        }
+                    }
+                    matchesFound.forEach(phrase => phrase.forEach(word => word.classList.add('search-match')));
+                
+                } else {
+                    const items = subtitleList.querySelectorAll('.subtitle-item, .transcript-segment');
+                    items.forEach(item => {
+                        const textElement = item.querySelector('.subtitle-text') || item;
+                        const originalText = textElement.textContent;
+                        if (originalText.toLowerCase().includes(searchTerm)) {
+                            if(item.classList.contains('subtitle-item')) {
+                                const regex = new RegExp(`(${searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi');
+                                textElement.dataset.originalText = originalText;
+                                textElement.innerHTML = originalText.replace(regex, '<span class="search-match">$1</span>');
+                            } else {
+                                item.classList.add('search-match');
+                            }
+                            matchesFound.push(item);
+                        }
+                    });
+                }
+				
+                if (matchesFound.length > 0) {
+                    searchMatches = matchesFound;
+                    currentMatchIndex = 0;
+                    highlightCurrentMatch();
+                }
+
+                updateSearchResultsUI();
+			}
+            
+            function navigateToPreviousMatch() {
+				if (searchMatches.length === 0) return;
+                currentMatchIndex = (currentMatchIndex > 0) ? currentMatchIndex - 1 : searchMatches.length - 1;
+				highlightCurrentMatch();
+			}
+
+            function navigateToNextMatch() {
+				if (searchMatches.length === 0) return;
+				currentMatchIndex = (currentMatchIndex < searchMatches.length - 1) ? currentMatchIndex + 1 : 0;
+				highlightCurrentMatch();
+			}
+            
+            function highlightCurrentMatch() {
+				document.querySelectorAll('.current-match').forEach(el => el.classList.remove('current-match'));
+				
+				if (searchMatches.length === 0 || currentMatchIndex === -1) return;
+
+                const currentMatch = searchMatches[currentMatchIndex];
+                let firstElement;
+                let selectionStart, selectionEnd;
+                
+                if (Array.isArray(currentMatch)) { // VTT Phrase Match
+                    currentMatch.forEach(el => el.classList.add('current-match'));
+                    firstElement = currentMatch[0];
+                    selectionStart = parseFloat(firstElement.dataset.start);
+                    selectionEnd = parseFloat(currentMatch[currentMatch.length - 1].dataset.end);
+                } else { // SRT Item or VTT Segment Match
+                    currentMatch.classList.add('current-match');
+                    firstElement = currentMatch;
+                    if (firstElement.classList.contains('transcript-word')) {
+                        selectionStart = parseFloat(firstElement.dataset.start);
+                        selectionEnd = parseFloat(firstElement.dataset.end);
+                    } else { // subtitle-item or transcript-segment
+                        const index = parseInt(firstElement.dataset.index);
+                        if (!isNaN(index) && subtitles[index]) {
+                            selectionStart = subtitles[index].startTime;
+                            selectionEnd = subtitles[index].endTime;
+                        }
+                    }
+                }
+
+                if (firstElement) {
+                    scrollElementIntoViewIfNeeded(firstElement, subtitleList);
+                }
+                
+                if(selectionStart !== undefined && selectionEnd !== undefined) {
+                    setSelectionRange(selectionStart, selectionEnd);
+                }
+
+				updateSearchResultsUI();
+			}
+			
+			function setupVideoFocusHandling() {
+				video.addEventListener('play', function() {
+					video.focus();
+				});
+				
+				document.querySelector('#play-pause').addEventListener('click', function() {
+					if (video.paused) {
+						video.focus();
+					}
+				});
+				
+				document.addEventListener('keydown', function(e) {
+					if (e.key === 'Tab' && !video.paused) {
+						e.preventDefault();
+					}
+				});
+			}
+            
+            function createMarkerFromSubtitle(subtitle) {
+				if (!video.duration) return;
+				
+				setSelectionRange(subtitle.startTime, subtitle.endTime);
+				
+				const newMarker = {
+					start: subtitle.startTime,
+					end: subtitle.endTime,
+					duration: subtitle.endTime - subtitle.startTime,
+					subtitles: [{
+						text: subtitle.text,
+						start: Math.round(subtitle.startTime * frameRate),
+						end: Math.round(subtitle.endTime * frameRate)
+					}]
+				};
+				
+				markers.push(newMarker);
+				activeMarkerIndex = markers.length - 1;
+				updateMarkersList();
+				document.getElementById('markers-tab').click();
+			}
+			
+			// MODIFIED to include padding logic
+			function addSearchResultsAsMarkers() {
+				if (!searchMatches.length || !video.duration) {
+					alert('No search results found or video not loaded.');
+					return;
+				}
+                
+                const applyPadding = applySearchPaddingCheckbox.checked;
+                let paddingDuration = 0;
+                let paddingMode = 'mid';
+
+                if (applyPadding) {
+                    const minutes = parseInt(minutesInput.value) || 0;
+                    const seconds = parseInt(secondsInput.value) || 0;
+                    const frames = parseInt(framesInput.value) || 0;
+                    paddingDuration = minutes * 60 + seconds + (frames / frameRate);
+                    paddingMode = playheadPositionSelect.value;
+
+                    if(paddingDuration <= 0) {
+                        alert("Please set a positive duration in the 'Precise Range Duration' controls to use for padding.");
+                        return;
+                    }
+                }
+				
+                let newMarkersCount = 0;
+                searchMatches.forEach(match => {
+                    let originalStart, originalEnd, text;
+                    if(Array.isArray(match)) { // VTT Phrase
+                        originalStart = parseFloat(match[0].dataset.start);
+                        originalEnd = parseFloat(match[match.length-1].dataset.end);
+                        text = match.map(el => el.textContent).join(' ');
+                    } else { // SRT item or VTT segment
+                        const index = parseInt(match.dataset.index);
+                        if(!isNaN(index) && subtitles[index]) {
+                            const sub = subtitles[index];
+                            originalStart = sub.startTime;
+                            originalEnd = sub.endTime;
+                            text = sub.text;
+                        }
+                    }
+
+                    if(originalStart !== undefined) {
+                        let finalStart = originalStart;
+                        let finalEnd = originalEnd;
+
+                        if (applyPadding) {
+                            switch (paddingMode) {
+                                case 'in':
+                                    finalStart = originalStart;
+                                    finalEnd = originalStart + paddingDuration;
+                                    break;
+                                case 'out':
+                                    finalEnd = originalEnd;
+                                    finalStart = originalEnd - paddingDuration;
+                                    break;
+                                case 'mid':
+                                    const midpoint = originalStart + (originalEnd - originalStart) / 2;
+                                    finalStart = midpoint - (paddingDuration / 2);
+                                    finalEnd = midpoint + (paddingDuration / 2);
+                                    break;
+                            }
+                        }
+
+                        // Clamp values to video duration
+                        finalStart = Math.max(0, finalStart);
+                        finalEnd = Math.min(video.duration, finalEnd);
+
+                        if (finalStart < finalEnd) {
+                            markers.push({
+                                start: finalStart,
+                                end: finalEnd,
+                                duration: finalEnd - finalStart,
+                                subtitles: [{
+                                    text: text,
+                                    start: Math.round(finalStart * frameRate),
+                                    end: Math.round(finalEnd * frameRate)
+                                }]
+                            });
+                            newMarkersCount++;
+                        }
+                    }
+                });
+				
+				if (newMarkersCount > 0) {
+					updateMarkersList();
+					document.getElementById('markers-tab').click();
+					alert(`Added ${newMarkersCount} new markers from search results.`);
+				} else {
+					alert('No valid markers could be created from the search results.');
+				}
+			}
+
+			function updateSearchResultsUI() {
+				const hasMatches = searchMatches.length > 0;
+				
+				searchNavigation.style.display = hasMatches ? 'flex' : 'none';
+				
+				const addMarkersBtn = document.getElementById('add-search-markers');
+				if (addMarkersBtn) {
+					addMarkersBtn.style.display = hasMatches ? 'block' : 'none';
+				}
+				
+				if (hasMatches) {
+					document.getElementById('search-count').textContent = `${currentMatchIndex + 1} of ${searchMatches.length}`;
+				} else {
+                    document.getElementById('search-count').textContent = `0 results`;
+                }
+			}
+            
+            // ---------- 6. MARKER HANDLING FUNCTIONS ----------
+            window.loadMarker = function(index) {
+                if (!video.duration || !markers[index]) return;
+                
+                const marker = markers[index];
+                
+                setSelectionRange(marker.start, marker.end);
+
+                activeMarkerIndex = index;
+                updateMarkersList(); // This will also update the waveform segments
+            };
+
+            window.addMarker = function() {
+				if (!video.duration) return;
+				
+				let subtitleText = "";
+				let subtitleItems = [];
+				
+				if (subtitleFormat === "vtt" && wordTimings.length > 0) {
+					const wordsInRange = wordTimings.filter(word => 
+						word.startTime >= currentSelection.start && 
+						word.endTime <= currentSelection.end
+					);
+					
+					if (wordsInRange.length > 0) {
+						subtitleText = wordsInRange.map(word => word.text).join(' ');
+						subtitleItems.push({
+							text: subtitleText,
+							start: Math.round(currentSelection.start * frameRate),
+							end: Math.round(currentSelection.end * frameRate)
+						});
+					}
+				} else {
+					const overlappingSubtitles = subtitles.filter(subtitle => 
+						(subtitle.startTime < currentSelection.end && 
+						 subtitle.endTime > currentSelection.start)
+					);
+					
+					if (overlappingSubtitles.length > 0) {
+						subtitleText = overlappingSubtitles.map(sub => sub.text).join(" ");
+						subtitleItems.push({
+							text: subtitleText,
+							start: Math.round(currentSelection.start * frameRate),
+							end: Math.round(currentSelection.end * frameRate)
+						});
+					}
+				}
+				
+				const newMarker = {
+					start: currentSelection.start,
+					end: currentSelection.end,
+					duration: currentSelection.end - currentSelection.start,
+					subtitles: subtitleItems
+				};
+				
+				markers.push(newMarker);
+				activeMarkerIndex = markers.length - 1;
+				updateMarkersList();
+				
+				setTimeout(() => {
+					const newMarkerElement = document.querySelector(`.marker-item[data-index="${activeMarkerIndex}"]`);
+					if (newMarkerElement) {
+						newMarkerElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+					}
+				}, 100);
+			};
+
+            window.removeMarker = function(index) {
+                if (index === activeMarkerIndex) {
+                    activeMarkerIndex = -1;
+                } else if (index < activeMarkerIndex) {
+                    activeMarkerIndex--;
+                }
+                
+                markers.splice(index, 1);
+                updateMarkersList();
+            };
+
+			function setInPoint() {
+				if (!video.duration) return;
+				const currentTime = video.currentTime;
+				if (currentTime < currentSelection.end) {
+					setSelectionRange(currentTime, currentSelection.end);
+				} else {
+                    setSelectionRange(currentTime, currentTime);
+				}
+			}
+
+			function setOutPoint() {
+				if (!video.duration) return;
+				const currentTime = video.currentTime;
+				if (currentTime > currentSelection.start) {
+					setSelectionRange(currentSelection.start, currentTime);
+				} else {
+					setSelectionRange(currentTime, currentTime);
+				}
+			}
+            
+            // ---------- 7. FILE HANDLING FUNCTIONS ----------
+            function loadVideo(file) {
+                if (file && file.type.startsWith('video/')) {
+                    if (currentVideoUrl) {
+                        URL.revokeObjectURL(currentVideoUrl);
+                    }
+                    
+                    originalFileName = file.name;
+                    originalFilePath = file.path || file.webkitRelativePath || `C:/Videos/${file.name}`;
+                    
+                    currentVideoUrl = URL.createObjectURL(file);
+                    video.src = currentVideoUrl;
+                    currentVideoFile = file; // Store file for Peaks.js
+                    
+                    fps_rounder = [];
+                    frame_not_seeked = true;
+                    
+                    audioInfo = { samplerate: null, channelcount: null };
+                    currentSubtitleDisplay.textContent = '';
+                    resetWaveform();
+                    
+                    video.onloadedmetadata = async function() {
+                        currentSelection.start = 0;
+                        currentSelection.end = video.duration;
+                        video.requestVideoFrameCallback(ticker);
+                        
+                        frameRate = parseFloat(framerateSelect.value);
+                        frameStep = 1 / frameRate;
+                        
+                        updateZoom(0, 100, false);
+                        updateTimeDisplays();
+                        updateMarkersList();
+                        
+                        playPauseBtn.textContent = 'Play';
+                    };
+                    
+                    video.addEventListener('seeked', function() {
+                        fps_rounder.pop();
+                        frame_not_seeked = false;
+                    });
+                    
+                    video.onerror = function() {
+                        console.error('Error loading video:', video.error);
+                        alert('Error loading video. Please try another file.');
+                    };
+                } else {
+                    alert('Please upload a valid video file.');
+                }
+            }
+            
+            function handleSubtitleFile(file) {
+                if (file) {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    subtitleFileInput.files = dataTransfer.files;
+                    const event = new Event('change', { bubbles: true });
+                    subtitleFileInput.dispatchEvent(event);
+                }
+            }
+            
+            async function handleJSONImport(file) {
+				try {
+					const text = await file.text();
+					const jsonData = JSON.parse(text);
+					
+					if (!jsonData.video || !jsonData.clips) {
+						throw new Error('Invalid JSON format');
+					}
+					
+					if (jsonData.video.file.media.video.timecode.rate.timebase) {
+						const jsonFrameRate = parseFloat(jsonData.video.file.media.video.timecode.rate.timebase);
+						framerateSelect.value = jsonFrameRate.toString();
+						frameRate = jsonFrameRate;
+						frameStep = 1 / frameRate;
+					}
+					
+					markers = jsonData.clips.map(clip => ({
+						start: clip.start / frameRate,
+						end: clip.end / frameRate,
+						duration: (clip.end - clip.start) / frameRate,
+						subtitles: clip.subtitles || []
+					}));
+					
+					updateMarkersList();
+                    
+                    const videoFileName = jsonData.video.file.name;
+                    let videoMatched = false;
+                    if (fileInput.files.length > 0 && fileInput.files[0].name === videoFileName) {
+                        loadVideo(fileInput.files[0]);
+                        videoMatched = true;
+                    }
+                    
+                    if (!videoMatched) {
+                        const notification = document.createElement('div');
+                        notification.className = 'alert alert-warning mt-2';
+                        notification.innerHTML = `
+                            <strong>Notice:</strong> The JSON file is looking for a video named "${videoFileName}". 
+                            Please upload this video file to use with these markers.
+                        `;
+                        dropZone.after(notification);
+                        
+                        setTimeout(() => {
+                            if (notification.parentNode) {
+                                notification.parentNode.removeChild(notification);
+                            }
+                        }, 10000);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error importing JSON:', error);
+                    alert('Error importing JSON file. Please check the file format.');
+                }
+            }
+            
+            function ticker(useless, metadata) {
+                const media_time_diff = Math.abs(metadata.mediaTime - last_media_time);
+                const frame_num_diff = Math.abs(metadata.presentedFrames - last_frame_num);
+                const diff = media_time_diff / frame_num_diff;
+
+                if (
+                    diff &&
+                    diff < 1 &&
+                    frame_not_seeked &&
+                    fps_rounder.length < 50 &&
+                    video.playbackRate === 1 &&
+                    document.hasFocus()
+                ) {
+                    fps_rounder.push(diff);
+                    detected_fps = Math.round(1 / get_fps_average());
+                    
+                    const certainty = fps_rounder.length * 2;
+                    detectedFpsDisplay.textContent = `${detected_fps} fps (${certainty}%)`;
+                    
+                    if (certainty >= 50) {
+                        const closestRate = findClosestFrameRate(detected_fps);
+                        framerateSelect.value = closestRate.toString();
+                        frameRate = closestRate;
+                        frameStep = 1 / frameRate;
+                        updateTimeDisplays();
+                        updateMarkersList();
+                    }
+                }
+
+                frame_not_seeked = true;
+                last_media_time = metadata.mediaTime;
+                last_frame_num = metadata.presentedFrames;
+                video.requestVideoFrameCallback(ticker);
+            }
+            
+            async function detectAudioInfo(video) {
+                try {
+                    if (!audioContext) {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        const source = audioContext.createMediaElementSource(video);
+                        source.connect(audioContext.destination);
+                    }
+                    return {
+                        samplerate: audioContext.sampleRate,
+                        channelcount: (video.mozChannels || video.webkitAudioChannelCount || 2)
+                    };
+                } catch (e) {
+                    console.warn('Could not detect audio info:', e);
+                    return { samplerate: 48000, channelcount: 2 }; // Default values
+                }
+            }
+
+            // ---------- 8. PEAKS.JS WAVEFORM FUNCTIONS ----------
+            function resetWaveform() {
+                if (peaksInstance) {
+                    peaksInstance.destroy();
+                    peaksInstance = null;
+                }
+                waveformViewContainer.style.display = 'none';
+                waveformViewContainer.style.opacity = 0;
+            }
+
+            async function generatePeaksWaveform() {
+                if (!currentVideoFile) {
+                    alert('Please load a video first.');
+                    return;
+                }
+                
+                resetWaveform();
+                loadingIndicator.style.display = 'block';
+                generateWaveformButton.disabled = true;
+                waveformMessage.style.display = 'none';
+
+                try {
+                    // Use a local audio context for processing to ensure it can be garbage collected.
+                    const localAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const arrayBuffer = await currentVideoFile.arrayBuffer();
+                    
+                    const options = {
+                        audio_context: localAudioContext,
+                        array_buffer: arrayBuffer,
+                        scale: 1024 // Samples per pixel
+                    };
+                    
+                    WaveformData.createFromAudio(options, (err, waveform) => {
+                        // We can now close the local audio context.
+                        localAudioContext.close();
+
+                        if (err) {
+                            console.error('Error generating waveform data:', err);
+                            waveformMessage.textContent = 'Could not generate waveform for this audio file.';
+                            waveformMessage.style.display = 'block';
+                            loadingIndicator.style.display = 'none';
+                            generateWaveformButton.disabled = false;
+                            return;
+                        }
+                        
+                        const peaksOptions = {
+                            container: waveformViewContainer,
+                            mediaElement: video,
+                            waveformData: waveform,
+                            height: 80,
+                            waveformColor: '#2196F3',
+                            playedWaveformColor: '#1976D2',
+                            playheadColor: '#e74c3c',
+                            showPlayheadTime: false, // Keep it simple
+                            keyboard: false
+                        };
+                        
+                        Peaks.init(peaksOptions, (err, peaks) => {
+                            if (err) {
+                                console.error('Failed to initialize Peaks.js:', err.message);
+                                waveformMessage.textContent = 'Could not initialize the waveform viewer.';
+                                waveformMessage.style.display = 'block';
+                            } else {
+                                peaksInstance = peaks;
+                                waveformViewContainer.style.display = 'block';
+                                setTimeout(() => { waveformViewContainer.style.opacity = 1; }, 50); // Fade in
+                                
+                                updatePeaksSegments(); // Add existing markers
+
+                                // Handle clicks on the waveform to seek the video
+                                peaks.on('overview.click', function(time) {
+                                    video.currentTime = time;
+                                });
+                            }
+                            
+                            loadingIndicator.style.display = 'none';
+                            generateWaveformButton.disabled = false;
+                        });
+                    });
+                    
+                } catch (e) {
+                    console.error("Error processing audio file for waveform:", e);
+                    waveformMessage.textContent = 'The selected file could not be processed.';
+                    waveformMessage.style.display = 'block';
+                    loadingIndicator.style.display = 'none';
+                    generateWaveformButton.disabled = false;
+                }
+            }
+
+            function updatePeaksSegments() {
+                if (!peaksInstance) return;
+                
+                peaksInstance.segments.removeAll();
+                
+                markers.forEach((marker, index) => {
+                    peaksInstance.segments.add({
+                        startTime: marker.start,
+                        endTime: marker.end,
+                        labelText: `M${index + 1}`,
+                        color: index === activeMarkerIndex ? '#e74c3c' : '#4CAF50', // Highlight active marker
+                        editable: false
+                    });
+                });
+            }
+            
+            // ---------- 9. DRAG AND DROP & MOUSE HANDLERS ----------
+            const handlePlayheadDrag = function(e) {
+                if (isPlayheadDragging) {
+                    if (animationFrame) cancelAnimationFrame(animationFrame);
+                    
+                    animationFrame = requestAnimationFrame(() => {
+                        const timelineRect = $timeline[0].getBoundingClientRect();
+                        let position = (e.clientX - timelineRect.left) / timelineRect.width;
+                        position = Math.max(0, Math.min(1, position));
+                        
+                        if (video.duration) {
+                            video.currentTime = position * video.duration;
+                        }
+                    });
+                    
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            };
+            
+            function handleDragOver(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('drag-over');
+            }
+
+            function handleDragLeave(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('drag-over');
+            }
+            
+            function handleDrop(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('drag-over');
+                
+                const files = Array.from(e.dataTransfer.files);
+                const videoFiles = files.filter(f => f.type.startsWith('video/'));
+                const subtitleFiles = files.filter(f => f.name.endsWith('.srt') || f.name.endsWith('.vtt') || f.name.endsWith('.txt'));
+                const jsonFiles = files.filter(f => f.name.endsWith('.json'));
+                
+                jsonFiles.forEach(handleJSONImport);
+                videoFiles.forEach(loadVideo);
+                if (subtitleFiles.length > 0) handleSubtitleFile(subtitleFiles[0]);
+            }
+            
+            // ---------- 10. UI INITIALIZATION ----------
+			function updateFramesInputMax() {
+				const maxFrames = Math.ceil(frameRate);
+				framesInput.max = maxFrames - 1;
+				framesInput.placeholder = `0-${maxFrames - 1}`;
+				if (parseInt(framesInput.value) >= maxFrames) framesInput.value = 0;
+			}
+            
+            // ---------- 11. EVENT LISTENERS ----------
+			document.getElementById('set-in-point').addEventListener('click', setInPoint);
+			document.getElementById('set-out-point').addEventListener('click', setOutPoint);
+			
+            document.addEventListener('selectstart', e => { if (isPlayheadDragging || isDraggingRange) e.preventDefault(); });
+            
+            mainPlayhead.addEventListener('mousedown', e => {
+                isPlayheadDragging = true;
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            $timeline.on('click', function(e) {
+                if (!video.duration) return;
+                const rect = this.getBoundingClientRect();
+                const position = (e.clientX - rect.left) / rect.width;
+                video.currentTime = position * video.duration;
+                isPlayheadDragging = false;
+                isDraggingRange = false;
+            });
+
+            playPauseBtn.addEventListener('click', () => {
+                if (video.paused) video.play(); else video.pause();
+            });
+
+            stopBtn.addEventListener('click', () => {
+                video.pause();
+                video.currentTime = 0;
+            });
+
+            repeatBtn.addEventListener('click', () => {
+                isLooping = !isLooping;
+                repeatBtn.classList.toggle('active', isLooping);
+                if (isLooping && video.paused) {
+                    video.currentTime = currentSelection.start;
+                    video.play();
+                }
+            });
+
+            frameBackBtn.addEventListener('click', () => {
+                video.currentTime = Math.max(0, (Math.round(video.currentTime * frameRate) - 1) / frameRate);
+            });
+
+            frameForwardBtn.addEventListener('click', () => {
+                video.currentTime = Math.min(video.duration, (Math.round(video.currentTime * frameRate) + 1) / frameRate);
+            });
+            
+            function updateSelectionFromPlayhead() {
+				if (!video.duration) return;
+				
+				const minutes = parseInt(minutesInput.value) || 0;
+				const seconds = parseInt(secondsInput.value) || 0;
+				const frames = parseInt(framesInput.value) || 0;
+				const newDuration = minutes * 60 + seconds + (frames / frameRate);
+				
+                let newStart, newEnd;
+				switch (playheadPositionSelect.value) {
+					case 'in':
+						newStart = video.currentTime;
+						newEnd = Math.min(video.duration, newStart + newDuration);
+						break;
+					case 'out':
+						newEnd = video.currentTime;
+						newStart = Math.max(0, newEnd - newDuration);
+						break;
+					case 'mid':
+						const halfDuration = newDuration / 2;
+						newStart = Math.max(0, video.currentTime - halfDuration);
+						newEnd = Math.min(video.duration, video.currentTime + halfDuration);
+						break;
+				}
+                setSelectionRange(newStart, newEnd);
+			}
+            
+            minutesInput.addEventListener('change', updateSelectionFromPlayhead);
+            secondsInput.addEventListener('change', updateSelectionFromPlayhead);
+			framesInput.addEventListener('change', updateSelectionFromPlayhead);
+            playheadPositionSelect.addEventListener('change', updateSelectionFromPlayhead);
+
+            framerateSelect.addEventListener('change', function() {
+				frameRate = parseFloat(this.value);
+				frameStep = 1 / frameRate;
+				updateTimeDisplays();
+				updateMarkersList();
+				updateFramesInputMax();
+			});
+
+            resetZoomBtn.addEventListener('click', () => video.duration && setSelectionRange(0, video.duration));
+
+            fileInput.addEventListener('change', e => e.target.files[0] && loadVideo(e.target.files[0]));
+            jsonInput.addEventListener('change', e => e.target.files[0] && handleJSONImport(e.target.files[0]));
+            subtitleFileInput.addEventListener('change', handleSubtitleSelect);
+            
+            searchBox.addEventListener('input', debounce(filterSubtitles, 300));
+            prevMatchButton.addEventListener('click', navigateToPreviousMatch);
+            nextMatchButton.addEventListener('click', navigateToNextMatch);
+
+            applySearchPaddingCheckbox.addEventListener('change', () => {
+                paddingInfoText.style.display = applySearchPaddingCheckbox.checked ? 'inline' : 'none';
+            });
+
+            addMarkerBtn.addEventListener('click', window.addMarker);
+            generateWaveformButton.addEventListener('click', generatePeaksWaveform);
+
+			saveJsonBtn.addEventListener('click', async function() {
+				if (!video.duration) {
+					alert('Please load a video first.');
+					return;
+				}
+				
+				if (!audioInfo.samplerate) audioInfo = await detectAudioInfo(video);
+				const customPath = customPathInput.value.trim();
+				if (customPath) saveCustomPath(customPath);
+				const pathUrl = customPath || `C:/Videos/`;
+
+				const videoData = {
+					"sequence": { "name": originalFileName.split('.')[0] },
+					"video": {
+						"file": {
+							"name": originalFileName, "pathurl": pathUrl + originalFileName,
+							"media": {
+								"video": {
+									"duration": Math.round(video.duration * frameRate),
+									"timecode": { "rate": { "ntsc": [29.97, 59.94, 23.976].includes(frameRate) ? "TRUE" : "FALSE", "timebase": frameRate }, "displayformat": "NDF", "first_timecode": "00:00:00:00" },
+									"samplecharacteristics": { "width": video.videoWidth, "height": video.videoHeight, "anamorphic": "FALSE", "pixelaspectratio": "Square" }
+								},
+								"audio": {
+									"samplecharacteristics": { "depth": 16, "samplerate": audioInfo.samplerate.toString() },
+									"channelcount": audioInfo.channelcount
+								}
+							}
+						}
+					},
+					"clips": markers.map((marker, index) => ({
+						"id": (index + 1).toString(),
+						"start": Math.round(marker.start * frameRate),
+						"end": Math.round(marker.end * frameRate),
+						"subtitles": marker.subtitles ? marker.subtitles.map(sub => ({
+                            text: sub.text,
+                            start: Math.round(marker.start * frameRate),
+                            end: Math.round(marker.end * frameRate)
+                        })) : []
+					}))
+				};
+				
+				if (subtitles.length > 0 && subtitleFileInput.files.length > 0) {
+					videoData.subtitles = { file: subtitleFileInput.files[0].name, format: subtitleFormat, count: subtitles.length };
+				}
+
+				const blob = new Blob([JSON.stringify(videoData, null, 2)], { type: 'application/json' });
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = `${originalFileName.split('.')[0]}.json`;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+			});
+            
+            // ---------- 12. PATH HANDLING ----------
+            function saveCustomPath(path) {
+                const savedPaths = JSON.parse(localStorage.getItem('customPaths') || '[]');
+                const existingIndex = savedPaths.indexOf(path);
+                if (existingIndex !== -1) savedPaths.splice(existingIndex, 1);
+                savedPaths.unshift(path);
+                if (savedPaths.length > 5) savedPaths.pop();
+                localStorage.setItem('customPaths', JSON.stringify(savedPaths));
+                updatePathDropdown();
+            }
+            
+            savePathBtn.addEventListener('click', () => {
+                const path = customPathInput.value.trim();
+                if (path) saveCustomPath(path);
+            });
+
+            savedPathsSelect.addEventListener('change', function() {
+                if (this.value) customPathInput.value = this.value;
+            });
+            
+            // ---------- 13. DRAG AND DROP HANDLERS ----------
+            dropZone.addEventListener('dragover', handleDragOver);
+            dropZone.addEventListener('dragleave', handleDragLeave);
+            dropZone.addEventListener('drop', handleDrop);
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                document.body.addEventListener(eventName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+            
+            // ---------- 14. VIDEO AND SUBTITLE EVENT LISTENERS ----------
+            video.addEventListener('timeupdate', function() {
+                // NEW: Looping logic
+                if (isLooping && video.currentTime >= currentSelection.end) {
+                    video.currentTime = currentSelection.start;
+                    video.play();
+                    return; // prevent other updates on this tick
+                }
+
+                updateTimeDisplays();
+                updateCurrentSubtitle();
+            });
+            
+            video.addEventListener('play', () => playPauseBtn.textContent = 'Pause');
+            video.addEventListener('pause', () => playPauseBtn.textContent = 'Play');
+            
+            // ---------- 15. KEYBOARD SHORTCUTS ----------
+            document.addEventListener('keydown', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+                
+                switch(e.code) {
+                    case 'Space': e.preventDefault(); playPauseBtn.click(); break;
+                    case 'ArrowLeft': if (e.ctrlKey || e.metaKey) { e.preventDefault(); frameBackBtn.click(); } break;
+                    case 'ArrowRight': if (e.ctrlKey || e.metaKey) { e.preventDefault(); frameForwardBtn.click(); } break;
+                    case 'KeyI': e.preventDefault(); setInPoint(); break;
+					case 'KeyO': e.preventDefault(); setOutPoint(); break;
+                    case 'KeyT':
+                        e.preventDefault();
+                        const tabs = document.querySelectorAll('[data-bs-toggle="tab"]');
+                        const activeTab = document.querySelector('.nav-link.active');
+                        const activeIndex = Array.from(tabs).indexOf(activeTab);
+                        const nextIndex = (activeIndex + 1) % tabs.length;
+                        tabs[nextIndex].click();
+                        break;
+                }
+            });
+            
+            // ---------- 16. MOBILE OPTIMIZATIONS ----------
+            function initMobileOptimizations() {
+                const isMobile = window.innerWidth <= 768;
+                if (isMobile) {
+                    // Core optimizations, etc.
+                }
+            }
+            
+            // ---------- 17. MEMORY MANAGEMENT ----------
+            window.addEventListener('beforeunload', function() {
+                if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
+                if (peaksInstance) peaksInstance.destroy();
+                if (audioContext && audioContext.state !== 'closed') audioContext.close();
+            });
+            
+            // ---------- 18. INITIALIZATION ----------
+            // NEW: Function to check for libraries and enable UI
+            function initializeWaveformTools() {
+                waveformStatus.textContent = 'Loading waveform tools...';
+                
+                const checkInterval = setInterval(() => {
+                    // Check if all necessary global objects are available
+                    if (window.Peaks && window.Konva && window.WaveformData) {
+                        clearInterval(checkInterval); // Stop checking
+                        waveformStatus.textContent = 'Tools ready.';
+                        waveformStatus.style.color = 'green';
+                        generateWaveformButton.disabled = false; // Enable the button
+                        setTimeout(() => { waveformStatus.style.display = 'none'; }, 2000);
+                    }
+                }, 100); // Check every 100ms
+                
+                // Fallback timeout in case a script fails to load
+                setTimeout(() => {
+                    if (generateWaveformButton.disabled) {
+                        clearInterval(checkInterval);
+                        waveformStatus.textContent = 'Error: Could not load waveform tools.';
+                        waveformStatus.style.color = 'red';
+                    }
+                }, 15000); // 15 seconds timeout
+            }
+
+			function initializeApp() {
+			    updatePathDropdown();
+			
+			    const addSearchMarkersBtn = document.getElementById('add-search-markers');
+			    if (addSearchMarkersBtn) {
+				    addSearchMarkersBtn.removeEventListener('click', addSearchResultsAsMarkers);
+				    addSearchMarkersBtn.addEventListener('click', addSearchResultsAsMarkers);
+			    }
+			
+			    updateFramesInputMax();
+			    setupVideoFocusHandling();
+                initMobileOptimizations(); // Basic mobile setup
+			
+			    window.addEventListener('resize', debounce(function() {
+				    if (video.duration) {
+					    updateTimeDisplays();
+					    updateZoom(zoomStart, zoomEnd, false);
+				    }
+                    initMobileOptimizations();
+			    }, 250));
+
+                // Start the process of checking for waveform libraries
+                initializeWaveformTools();
+		    }
+
+		    initializeApp();
+        });
+    });
+    </script>
+</body>
+</html>
