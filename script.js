@@ -1,844 +1,2112 @@
-// --- script.js ---
-
-// Updated to work with FFmpeg.wasm v0.12.15
-// Wait for DOM and FFmpeg to be fully loaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM loaded. Checking FFmpeg...");
-    
-    // Different ways to access FFmpeg methods based on version
-    let createFFmpeg, fetchFile;
-    
-    try {
-        // For v0.12.x the import might be different
-        if (typeof FFmpeg !== 'undefined') {
-            console.log("FFmpeg global object found, accessing methods...");
-            if (FFmpeg.FFmpeg) {
-                // v0.12.x structure
-                createFFmpeg = FFmpeg.FFmpeg.createFFmpeg;
-                fetchFile = FFmpeg.FFmpeg.fetchFile;
-                console.log("Accessed FFmpeg methods via FFmpeg.FFmpeg");
-            } else if (FFmpeg.createFFmpeg) {
-                // v0.11.x structure
-                createFFmpeg = FFmpeg.createFFmpeg;
-                fetchFile = FFmpeg.fetchFile;
-                console.log("Accessed FFmpeg methods via direct FFmpeg object");
-            } else {
-                throw new Error("FFmpeg global object exists but doesn't have expected methods");
-            }
-        } else {
-            console.error("FFmpeg global object not defined");
-            // Try check for @ffmpeg/ffmpeg module in window
-            if (typeof window !== 'undefined' && window.FFmpeg) {
-                createFFmpeg = window.FFmpeg.createFFmpeg;
-                fetchFile = window.FFmpeg.fetchFile;
-                console.log("Accessed FFmpeg methods via window.FFmpeg");
-            } else {
-                throw new Error("Unable to find FFmpeg methods in global scope");
-            }
-        }
+// Wait for DOM to be fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize jQuery after DOM is ready
+    $(function() {
+        // ---------- 1. CACHED DOM REFERENCES ----------
+        // Original elements
+        const video = document.getElementById('my_video');
+        const fileInput = document.getElementById('video-upload');
+        const jsonInput = document.getElementById('json-upload');
+        const playPauseBtn = document.getElementById('play-pause');
+        const stopBtn = document.getElementById('stop');
+        const frameBackBtn = document.getElementById('frame-back');
+        const frameForwardBtn = document.getElementById('frame-forward');
+        const framerateSelect = document.getElementById('framerate-select');
+        const currentTimeDisplay = document.getElementById('current-time');
+        const durationTimeDisplay = document.getElementById('duration-time');
+        const selectionTimeDisplay = document.getElementById('selection-time');
+        const selectionDurationDisplay = document.getElementById('selection-duration');
+        const resetZoomBtn = document.getElementById('reset-zoom');
+        const markersList = document.getElementById('markers-list');
+        const addMarkerBtn = document.getElementById('add-marker');
+        const saveJsonBtn = document.getElementById('save-json');
+        const dropZone = document.getElementById('file-drop-zone');
+        const playheadPositionSelect = document.getElementById('playhead-position');
+        const customDurationInput = document.getElementById('custom-duration-input');
+        const framesInput = document.getElementById('frames-input');
+        const minutesInput = document.getElementById('minutes-input');
+        const secondsInput = document.getElementById('seconds-input');
+        const customPathInput = document.getElementById('custom-path');
+        const savePathBtn = document.getElementById('save-path');
+        const savedPathsSelect = document.getElementById('saved-paths');
+        const detectedFpsDisplay = document.getElementById('detected-fps');
         
-        // Initialize app with the detected methods
-        initializeApp(createFFmpeg, fetchFile);
-    } catch (error) {
-        console.error("Critical error initializing FFmpeg:", error);
-        const statusDiv = document.getElementById('status')?.querySelector('p');
-        if (statusDiv) {
-            statusDiv.textContent = 'Error: Failed to initialize FFmpeg library. Please check console.';
-            statusDiv.style.color = 'red';
-        }
+        // Main timeline elements
+        const mainTimeline = document.getElementById('main-timeline');
+        const mainTimelineSelection = document.getElementById('main-timeline-selection');
+        const mainTimelinePlayhead = document.getElementById('main-timeline-playhead');
         
-        const processButton = document.getElementById('processButton');
-        if (processButton) {
-            processButton.disabled = true;
-            processButton.textContent = 'FFmpeg Error';
-        }
+        // Subtitle & Search elements
+        const subtitleFileInput = document.getElementById('subtitle-file');
+        const currentSubtitleDisplay = document.getElementById('current-subtitle');
+        const searchBox = document.getElementById('search-box');
+        const searchClearBtn = document.getElementById('search-clear-btn')
+        const subtitleList = document.getElementById('subtitle-list');
+        const prevMatchButton = document.getElementById('prev-match');
+        const nextMatchButton = document.getElementById('next-match');
+        const searchNavigation = document.getElementById('search-navigation');
         
-        alert(`Failed to initialize FFmpeg: ${error.message}\n\nPlease try refreshing the page or check your browser console for more details.`);
-    }
-});
+        // Waveform elements
+        const waveformScrollContainer = document.getElementById('waveform-scroll-container');
+        const waveformMessage = document.getElementById('waveform-message');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const timelineScale = document.getElementById('timeline-scale');
 
-function initializeApp(createFFmpeg, fetchFile) {
-    // --- DOM Elements ---
-    const videoFileInput = document.getElementById('videoFile');
-    const jsonFileInput = document.getElementById('jsonFile');
-    const subtitleFileInput = document.getElementById('subtitleFile');
-    const modeKeepRadio = document.getElementById('modeKeep');
-    const processButton = document.getElementById('processButton');
-    const statusDiv = document.getElementById('status').querySelector('p');
-    const progressBar = document.getElementById('progressBar');
-    const downloadArea = document.getElementById('downloadArea');
-    const ffmpegLogPre = document.getElementById('ffmpeg-log').querySelector('pre');
+        // New elements for new features
+        const repeatBtn = document.getElementById('repeat-play');
+        const applySearchPaddingCheckbox = document.getElementById('apply-search-padding');
+        const paddingInfoText = document.getElementById('padding-info');
 
-    // --- State ---
-    let ffmpeg = null;
-    let videoFile = null;
-    let editData = null;
-    let subtitleFile = null;
-    let isFFmpegLoaded = false;
-    let isProcessing = false;
-
-    // --- FFmpeg Setup ---
-    async function loadFFmpeg() {
-        statusDiv.textContent = 'Loading FFmpeg core... Please wait.';
-        ffmpegLogPre.textContent = 'Initializing FFmpeg...\n'; // Clear log initially
-        try {
-            ffmpeg = createFFmpeg({
-                log: true, // Enable basic logging to console for debugging
-                logger: ({ type, message }) => { // Capture detailed logs
-                    // Filter out progress messages from detailed log view if desired
-                    if (type !== 'fferr' || !message.includes('frame=')) {
-                         // Append messages, ensuring Scroll Height works correctly
-                         ffmpegLogPre.textContent += message + '\n';
-                        // Debounce or throttle scrolling updates if performance is an issue
-                        requestAnimationFrame(() => {
-                          ffmpegLogPre.scrollTop = ffmpegLogPre.scrollHeight; // Auto-scroll
-                        });
-                    }
-                },
-                progress: ({ ratio }) => {
-                    if (isFinite(ratio) && ratio >= 0 && ratio <= 1) {
-                        progressBar.style.display = 'block';
-                        progressBar.value = ratio * 100;
-                        // statusDiv.textContent = `Processing: ${(ratio * 100).toFixed(1)}%`;
-                        // Use the multi-stage progress updater instead
-                        if (typeof window.updateOverallProgress === 'function') {
-                             updateOverallProgress(ratio);
-                        } else {
-                             // Fallback if the updater isn't set yet
-                             statusDiv.textContent = `Processing: ${(ratio * 100).toFixed(1)}%`;
-                        }
-                    } else if (ratio === undefined || ratio < 0){
-                        // This can happen e.g. during initial setup before real processing
-                        // console.log("FFmpeg progress ratio invalid:", ratio);
-                    }
-                },
-                // corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js', // Explicitly specifying core
-                // --- IMPORTANT ---
-                // We COMMENT OUT corePath to let the ffmpeg.js loader (v0.12+)
-                // attempt to automatically select the correct core (single-threaded)
-                // when SharedArrayBuffer is not available (like on standard GitHub Pages).
-                // Ensure you've updated the script tag in index.html to v0.12.0 or later.
-            });
-            await ffmpeg.load();
-            isFFmpegLoaded = true;
-            statusDiv.textContent = 'FFmpeg loaded. Ready for files.';
-            ffmpegLogPre.textContent += 'FFmpeg core loaded successfully.\n';
-            updateButtonState();
-        } catch (error) {
-            console.error("FFmpeg loading error:", error);
-            statusDiv.textContent = 'Error loading FFmpeg. Check console.';
-            ffmpegLogPre.textContent += `Error loading FFmpeg: ${error}\n`;
-            // Provide a more informative alert, referencing the SharedArrayBuffer issue
-            alert(`Failed to load FFmpeg: ${error}. This often happens on platforms like GitHub Pages that don't enable SharedArrayBuffer by default. Try a different browser or consider hosting on a platform that allows setting COOP/COEP headers (like Netlify, Vercel, Cloudflare Pages).`);
-            isFFmpegLoaded = false; // Ensure state is correct
-            updateButtonState(); // Update button state to reflect loading failure
-        }
-    }
-
-    // --- File Handling ---
-    videoFileInput.addEventListener('change', (e) => {
-        console.log('Video file input changed.');
-        videoFile = e.target.files[0];
-         if (videoFile) {
-            console.log('Video file assigned:', videoFile.name);
-            statusDiv.textContent = `Video: ${videoFile.name}`;
-        } else {
-            console.log('No video file selected.');
-            statusDiv.textContent = 'Waiting for files...';
-        }
-        updateButtonState();
-    });
-
-    jsonFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        console.log('JSON file input changed.');
-        editData = null; // Reset edit data first
-        if (!file) {
-             console.log('No JSON file selected.');
-             updateButtonState(); // Update button state even if file is removed
-            return;
-        }
-        try {
-            console.log('Reading JSON file text:', file.name);
-            const text = await file.text();
-            console.log('Parsing JSON text...');
-            editData = JSON.parse(text);
-            console.log('JSON parsed successfully.');
-
-            // Basic validation
-            if (!editData.clips || !Array.isArray(editData.clips) || 
-                !editData.video?.file?.media?.video?.duration || 
-                !editData.video?.file?.media?.video?.timecode?.rate?.timebase) {
-                throw new Error("Invalid JSON format. Missing required fields (clips array, video.file.media.video.duration, video.file.media.video.timecode.rate.timebase).");
-            }
-            console.log('JSON validation passed.');
-            statusDiv.textContent = 'Video & JSON loaded.';
-            updateButtonState();
-        } catch (error) {
-            console.error("JSON processing error in listener:", error);
-            statusDiv.textContent = `Error reading JSON: ${error.message}`;
-            editData = null;
-            alert(`Error processing JSON file: ${error.message}. Please check the file content and structure.`);
-            updateButtonState(); // Ensure button state updates after error
-        }
-    });
-
-
-    subtitleFileInput.addEventListener('change', (e) => {
-        console.log('Subtitle file input changed.');
-        subtitleFile = e.target.files[0];
-         if (subtitleFile) {
-             console.log('Subtitle file assigned:', subtitleFile.name);
-             statusDiv.textContent = 'Video, JSON & Subtitles loaded.'; // Adjust status
-         } else {
-             console.log('No subtitle file selected.');
-              // Adjust status if other files are loaded
-              if (videoFile && editData) {
-                   statusDiv.textContent = 'Video & JSON loaded.';
-              }
-         }
-        // No button state change needed for optional file, but update status text potentially
-    });
-
-    // --- UI Updates ---
-    function updateButtonState() {
-        // Debugging logs
-        // console.log(`Updating button state: isFFmpegLoaded=${isFFmpegLoaded}, videoFile=${!!videoFile}, editData=${!!editData}, isProcessing=${isProcessing}`);
-
-        if (isFFmpegLoaded && videoFile && editData && !isProcessing) {
-            processButton.disabled = false;
-            processButton.textContent = 'Process Video';
-        } else {
-            processButton.disabled = true;
-            if (isProcessing) {
-                 processButton.textContent = 'Processing...';
-            } else if (!isFFmpegLoaded) {
-                 processButton.textContent = 'Loading FFmpeg...';
-            } else if (!videoFile) {
-                processButton.textContent = 'Upload Video File';
-            } else if (!editData) {
-                processButton.textContent = 'Upload JSON File';
-            } else {
-                processButton.textContent = 'Load Files First'; // Fallback
-            }
-        }
-    }
-
-
-    function setLoadingState(loading, message = '') {
-        isProcessing = loading;
-        updateButtonState();
-        statusDiv.textContent = message;
-        progressBar.value = 0; // Reset progress bar
-        progressBar.style.display = loading ? 'block' : 'none';
-         if (loading) {
-             ffmpegLogPre.textContent = ''; // Clear log on new process start
-             downloadArea.innerHTML = ''; // Clear previous download links
-         }
-    }
-
-    // --- Core Logic ---
-    processButton.addEventListener('click', async () => {
-        if (!videoFile || !editData || !isFFmpegLoaded || isProcessing) {
-            console.warn("Processing attempted but conditions not met.");
-            return;
-        }
-
-        setLoadingState(true, 'Starting processing...');
-        ffmpegLogPre.textContent = 'Processing started...\n'; // Clear log for new run
-
-        // --- Multi-stage progress tracking ---
-        let totalStages = 1; // Default to 1 stage if calculation fails
-        let currentStage = 0;
-        let segmentsToKeep = []; // Define here for scope access
-        window.updateOverallProgress = (stageRatio) => {
-            // Ensure stageRatio is a valid number between 0 and 1
-            const validStageRatio = isFinite(stageRatio) && stageRatio >= 0 && stageRatio <= 1 ? stageRatio : 0;
-            const overallRatio = (currentStage + validStageRatio) / totalStages;
-            const overallPercentage = Math.min(100, Math.max(0, overallRatio * 100)); // Clamp between 0 and 100
-             progressBar.value = overallPercentage;
-             statusDiv.textContent = `Processing: Stage ${currentStage + 1}/${totalStages} (${overallPercentage.toFixed(1)}%)`;
+        // ---------- 2. STATE VARIABLES ----------
+        // Original state variables
+        let originalFileName = '';
+        let originalFilePath = '';
+        let currentVideoUrl = null;
+        let frameRate = 29.97;
+        let frameStep = 1 / frameRate;
+        let markers = [];
+        let currentSelection = { start: 0, end: 0 };
+        let activeMarkerIndex = -1;
+        
+        // FPS detection variables
+        let last_media_time, last_frame_num, detected_fps;
+        let fps_rounder = [];
+        let frame_not_seeked = true;
+        let audioContext = null;
+        let audioInfo = {
+            samplerate: null,
+            channelcount: null
         };
-        // --- ---
+        
+        // Subtitle state variables
+        let subtitles = [];
+        let currentSubtitleIndex = -1;
+        let subtitleFormat = "srt"; // Can be "srt" or "vtt" 
+        let wordTimings = []; // For word-level timestamps
+        let searchMatches = []; // For storing search matches
+        let currentMatchIndex = -1; // Current position in search matches
+        
+        // Waveform state variables
+        let wavesurfer = null;
+        let importedWaveformData = null; // To store imported waveform data
+        let selectionRegion = null; // To store the waveform region
+       
+        // New state variables
+        let isLooping = false;
+        let isWaveformReady = false;
+        let isMainTimelineDragging = false;
 
-        try {
-            const mode = modeKeepRadio.checked ? 'keep' : 'remove';
-            const frameRate = editData.video.file.media.video.timecode.rate.timebase;
-            const totalDurationFrames = editData.video.file.media.video.duration;
-
-            if (!frameRate || typeof frameRate !== 'number' || frameRate <= 0) {
-                throw new Error(`Invalid frame rate (${frameRate}) in JSON data.`);
+        // ---------- SEARCH CLEAR FUNCTIONALITY ----------
+        // Show/hide clear button based on search input
+        function updateSearchClearButton() {
+            if (searchBox.value.trim()) {
+                searchClearBtn.style.display = 'block';
+            } else {
+                searchClearBtn.style.display = 'none';
             }
-             if (!totalDurationFrames || typeof totalDurationFrames !== 'number' || totalDurationFrames <= 0) {
-                 throw new Error(`Invalid total duration (${totalDurationFrames}) in JSON data.`);
-             }
+        }
+            
+        // Clear search functionality
+        function clearSearch() {
+            searchBox.value = '';
+            updateSearchClearButton();
+            filterSubtitles(); // This will clear the search and show all results
+        }
+            
+        // Event listeners for search clear functionality
+        searchBox.addEventListener('input', updateSearchClearButton);
+        searchClearBtn.addEventListener('click', clearSearch);
+                        
+        // ---------- 3. UTILITY FUNCTIONS ----------
+        // Convert time string to seconds
+        function timeToSeconds(timeString) {
+            if (typeof timeString === 'number') {
+                return timeString; // Already in seconds
+            }
+            
+            // For SRT format (00:00:00,000)
+            if (timeString.includes(',')) {
+                const [time, milliseconds] = timeString.split(',');
+                const [hours, minutes, seconds] = time.split(':').map(Number);
+                return hours * 3600 + minutes * 60 + seconds + parseInt(milliseconds) / 1000;
+            }
+            
+            // For WebVTT format (00:00:00.000)
+            return parseTimestamp(timeString);
+        }
+        
+        // Parse WebVTT timestamp to seconds
+        function parseTimestamp(timestamp) {
+            // Handle HH:MM:SS.mmm format
+            const match = timestamp.match(/(\d+):(\d+):(\d+)\.(\d+)/);
+            if (match) {
+                const hours = parseInt(match[1], 10);
+                const minutes = parseInt(match[2], 10);
+                const seconds = parseInt(match[3], 10);
+                const milliseconds = parseInt(match[4], 10);
+                return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+            }
+            
+            // Handle MM:SS.mmm format
+            const shortMatch = timestamp.match(/(\d+):(\d+)\.(\d+)/);
+            if (shortMatch) {
+                const minutes = parseInt(shortMatch[1], 10);
+                const seconds = parseInt(shortMatch[2], 10);
+                const milliseconds = parseInt(shortMatch[3], 10);
+                return minutes * 60 + seconds + milliseconds / 1000;
+            }
+            
+            return 0;
+        }
+        
+        // Debounce function to limit rapid firing of events
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+        
+        // Calculate frame rate average
+        function get_fps_average() {
+            return fps_rounder.reduce((a, b) => a + b) / fps_rounder.length;
+        }
 
-            const totalDurationSec = totalDurationFrames / frameRate;
+        // Find closest standard frame rate to detected rate
+        function findClosestFrameRate(detected_fps) {
+            const frameRates = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+            return frameRates.reduce((prev, curr) => {
+                return Math.abs(curr - detected_fps) < Math.abs(prev - detected_fps) ? curr : prev;
+            });
+        }
 
-            // 1. Calculate Segments to Keep (in seconds)
-            segmentsToKeep = calculateKeepSegments(editData.clips, mode, frameRate, totalDurationSec); // Assign to outer scope variable
-            if (segmentsToKeep.length === 0) {
-                throw new Error("No segments to keep after applying rules. Check JSON and mode.");
+        // Convert seconds to SMPTE timecode
+        function toSMPTE(seconds, frameRate) {
+            if (isNaN(seconds) || isNaN(frameRate)) {
+                return "00:00:00:00";
+            }
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            const totalFrames = Math.floor((seconds * frameRate) % frameRate);
+            
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${totalFrames.toString().padStart(2, '0')}`;
+        }
+
+        // Format time with or without frames
+        function formatTime(seconds, includeFrames = false) {
+            if (includeFrames) {
+                return toSMPTE(seconds, frameRate);
+            }
+            const duration = toSMPTE(seconds, frameRate);
+            const durationInSeconds = (seconds % 60).toFixed(2);
+            return `${duration} (${durationInSeconds}s)`;
+        }
+
+        // Format timestring for subtitle display
+        function formatTimeForDisplay(timeInSeconds) {
+            const minutes = Math.floor(timeInSeconds / 60);
+            const seconds = Math.floor(timeInSeconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // ---------- 4. UI UPDATE FUNCTIONS ----------
+        // Update all time displays
+        function updateTimeDisplays() {
+            if (!video.duration || !isFinite(video.duration)) return;
+            
+            currentTimeDisplay.textContent = toSMPTE(video.currentTime, frameRate);
+            durationTimeDisplay.textContent = toSMPTE(video.duration, frameRate);
+            
+            selectionTimeDisplay.textContent = 
+                `Selection: ${toSMPTE(currentSelection.start, frameRate)} - ${toSMPTE(currentSelection.end, frameRate)}`;
+            const selectionDur = currentSelection.end - currentSelection.start;
+            selectionDurationDisplay.textContent = 
+                `Duration: ${toSMPTE(selectionDur, frameRate)}`;
+            
+            // Update main timeline playhead position
+            if (!isMainTimelineDragging) {
+                const timelinePosition = (video.currentTime / video.duration) * 100;
+                mainTimelinePlayhead.style.left = `${timelinePosition}%`;
+            }
+        }
+
+        /**
+         * Sets the IN and OUT points and updates the UI.
+         * @param {number} startTime - The start time in seconds for the selection.
+         * @param {number} endTime - The end time in seconds for the selection.
+         */
+        function setSelectionRange(startTime, endTime) {
+            if (!video.duration || startTime === undefined || endTime === undefined || startTime > endTime) {
+                return;
             }
 
-            statusDiv.textContent = `Calculated ${segmentsToKeep.length} segment(s) to keep.`;
-            console.log("Segments to keep (seconds):", segmentsToKeep);
-            ffmpegLogPre.textContent += `Calculated ${segmentsToKeep.length} segment(s) to keep.\n`;
+            // Set the global selection state
+            currentSelection.start = startTime;
+            currentSelection.end = endTime;
 
-            // Update total stages for progress calculation
-            totalStages = segmentsToKeep.length + 1; // N extractions + 1 concat
+            // Calculate the positions on the main timeline (0-100%)
+            const startPercent = (startTime / video.duration) * 100;
+            const endPercent = (endTime / video.duration) * 100;
 
-            // 2. Write input video to FFmpeg's virtual filesystem
-            const inputFilename = 'input.mp4'; // Use a fixed name
-            ffmpegLogPre.textContent += 'Writing video to FFmpeg memory...\n';
-            statusDiv.textContent = 'Loading video into memory...';
-            // Ensure file system is clean before writing potentially large file
-            try {
-                 if (ffmpeg.FS('readdir', '/').includes(inputFilename)) {
-                     ffmpeg.FS('unlink', inputFilename);
-                     console.log('Removed existing input file from FS.');
-                 }
-             } catch (e) { /* Ignore if file doesn't exist */ }
+            // Update the visual selection bar on the main timeline
+            mainTimelineSelection.style.left = `${startPercent}%`;
+            mainTimelineSelection.style.width = `${endPercent - startPercent}%`;
 
-            ffmpeg.FS('writeFile', inputFilename, await fetchFile(videoFile));
-            statusDiv.textContent = 'Video loaded. Starting FFmpeg processing...';
-            ffmpegLogPre.textContent += 'Video written to memory. Starting segment extraction...\n';
+            // Update all the text-based time displays
+            updateTimeDisplays();
 
+            // Update the waveform region
+            if(selectionRegion) {
+                selectionRegion.update({
+                    start: startTime,
+                    end: endTime
+                });
+            }
 
-            // 3. Process Video Segments (Extract and Concat)
-            const outputFilename = `output_${Date.now()}.mp4`;
-            const segmentFiles = [];
-            const concatListFilename = 'mylist.txt';
-            let concatFileContent = '';
+            // Update timeline scale
+            updateTimelineScale();
+        }
 
-            // Extract each segment
-            for (let i = 0; i < segmentsToKeep.length; i++) {
-                currentStage = i; // Progress tracking: current stage index (0-based)
-                const segment = segmentsToKeep[i];
-                const start = segment.start.toFixed(6); // Use high precision
-                const duration = (segment.end - segment.start).toFixed(6);
-                const tempOutputFilename = `segment_${i}.mp4`;
+        // Update markers list with the current markers
+        function updateMarkersList() {
+            markersList.innerHTML = markers.length ? '<h5 class="mt-3 mb-2">Markers:</h5>' : '';
+            
+            markers.forEach((marker, index) => {
+                const div = document.createElement('div');
+                div.className = 'marker-item';
+                div.setAttribute('data-index', index);
+                
+                if (index === activeMarkerIndex) {
+                    div.classList.add('active');
+                }
+                
+                // Determine what text to display
+                const subtitleObj = marker.subtitles && marker.subtitles.length > 0 ? marker.subtitles[0] : null;
+                const displayText = subtitleObj ? subtitleObj.text : "";
+                
+                // Create marker header with timecodes and buttons
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'marker-header';
+                headerDiv.innerHTML = `
+                    <span class="marker-label">Marker ${index + 1}: ${toSMPTE(marker.start, frameRate)} - ${toSMPTE(marker.end, frameRate)} (${toSMPTE(marker.duration, frameRate)})</span>
+                    <div class="marker-actions">
+                        <button class="btn btn-sm btn-primary me-1 load-marker" title="Load this marker">Load</button>
+                        <button class="btn btn-sm btn-info me-1 edit-marker" title="Edit subtitle text">Edit</button>
+                        <button class="btn btn-sm btn-danger remove-marker" title="Remove this marker">Remove</button>
+                    </div>
+                `;
+                div.appendChild(headerDiv);
+                
+                // Add subtitle text display if it exists
+                if (displayText) {
+                    const subtitleDiv = document.createElement('div');
+                    subtitleDiv.className = 'marker-subtitle';
+                    subtitleDiv.textContent = displayText;
+                    div.appendChild(subtitleDiv);
+                }
+                
+                // Make the label clickable
+                headerDiv.querySelector('.marker-label').addEventListener('click', function() {
+                    loadMarker(index);
+                });
+                
+                // Button event listeners
+                headerDiv.querySelector('.load-marker').addEventListener('click', function() {
+                    loadMarker(index);
+                });
+                
+                headerDiv.querySelector('.edit-marker').addEventListener('click', function() {
+                    editMarkerText(index, div);
+                });
+                
+                headerDiv.querySelector('.remove-marker').addEventListener('click', function() {
+                    removeMarker(index);
+                });
+                
+                markersList.appendChild(div);
+            });
+        }
+        
+        function editMarkerText(index, markerElement) {
+            const marker = markers[index];
+            
+            // Check if we're already editing this marker
+            const existingForm = markerElement.querySelector('.marker-edit-form');
+            if (existingForm) {
+                markerElement.removeChild(existingForm);
+                return;
+            }
+            
+            // Get current subtitle text
+            const subtitleObj = marker.subtitles && marker.subtitles.length > 0 ? marker.subtitles[0] : null;
+            const currentText = subtitleObj ? subtitleObj.text : "";
+            
+            // Create edit form
+            const editForm = document.createElement('div');
+            editForm.className = 'marker-edit-form mt-2 w-100';
+            editForm.innerHTML = `
+                <div class="mb-2">
+                    <label for="marker-text-${index}" class="form-label small">Subtitle Text</label>
+                    <textarea class="form-control form-control-sm" id="marker-text-${index}" rows="3" placeholder="Enter subtitle text...">${currentText}</textarea>
+                </div>
+                <div class="d-flex justify-content-end">
+                    <button class="btn btn-sm btn-secondary me-2 cancel-edit">Cancel</button>
+                    <button class="btn btn-sm btn-primary save-edit">Save Changes</button>
+                </div>
+            `;
+            
+            // Add form to marker element
+            markerElement.appendChild(editForm);
+            
+            // Focus the text area
+            const textArea = document.getElementById(`marker-text-${index}`);
+            textArea.focus();
+            textArea.setSelectionRange(textArea.value.length, textArea.value.length);
+            
+            // Handle cancel button
+            editForm.querySelector('.cancel-edit').addEventListener('click', function() {
+                markerElement.removeChild(editForm);
+            });
+            
+            // Handle save button
+            editForm.querySelector('.save-edit').addEventListener('click', function() {
+                // Get text from form
+                const newText = document.getElementById(`marker-text-${index}`).value;
+                
+                // Update marker
+                if (newText.trim()) {
+                    // If marker already has subtitles array
+                    if (marker.subtitles && marker.subtitles.length > 0) {
+                        marker.subtitles[0].text = newText;
+                    } else {
+                        // If no subtitles array, create one
+                        marker.subtitles = [{
+                            text: newText,
+                            start: Math.round(marker.start * frameRate),
+                            end: Math.round(marker.end * frameRate)
+                        }];
+                    }
+                } else {
+                    // If text is empty, remove subtitles array
+                    marker.subtitles = [];
+                }
+                
+                // Update the markers list to reflect changes
+                updateMarkersList();
+            });
+        }
 
-                // Check for near-zero or negative duration
-                if (parseFloat(duration) <= 0.001) {
-                    console.warn(`Skipping very short or zero-duration segment ${i + 1}`);
-                    ffmpegLogPre.textContent += `Skipping very short segment ${i+1} (duration: ${duration}s)\n`;
-                    // Adjust total stages if skipping
-                    totalStages--;
+        // Update the current subtitle display based on video time
+        function updateCurrentSubtitle() {
+            if (!subtitles.length) return;
+            
+            const currentTime = video.currentTime;
+            
+            // Find the subtitle that corresponds to the current time
+            const index = subtitles.findIndex(subtitle => 
+                currentTime >= subtitle.startTime && currentTime <= subtitle.endTime
+            );
+            
+            // Update display only if the subtitle changed
+            if (index !== currentSubtitleIndex) {
+                currentSubtitleIndex = index;
+                
+                // Clear previous active states
+                const activeItems = subtitleList.querySelectorAll('.active');
+                activeItems.forEach(item => item.classList.remove('active'));
+                
+                if (index !== -1) {
+                    // Display current subtitle
+                    currentSubtitleDisplay.textContent = subtitles[index].text;
+                    
+                    if (subtitleFormat === "srt") {
+                        // Highlight the current subtitle in the SRT list
+                        const items = subtitleList.querySelectorAll('.subtitle-item');
+                        if (items[index]) {
+                            items[index].classList.add('active');
+                            
+                            // Only scroll within subtitle list container, not the page
+                            // Check if video is playing before scrolling
+                            const isPlaying = !video.paused;
+                            if (!isPlaying || document.activeElement !== video) {
+                                scrollElementIntoViewIfNeeded(items[index], subtitleList);
+                            }
+                        }
+                    } else if (subtitleFormat === "vtt") {
+                        // Highlight the current segment in WebVTT transcript
+                        const segments = subtitleList.querySelectorAll('.transcript-segment');
+                        if (segments[index]) {
+                            segments[index].classList.add('active');
+                            
+                            // Only scroll within subtitle list container, not the page
+                            // Check if video is playing before scrolling
+                            const isPlaying = !video.paused;
+                            if (!isPlaying || document.activeElement !== video) {
+                                scrollElementIntoViewIfNeeded(segments[index], subtitleList);
+                            }
+                        }
+                        
+                        // Also highlight the current word if we have word-level timing
+                        updateCurrentWord(currentTime);
+                    }
+                } else {
+                    currentSubtitleDisplay.textContent = '';
+                }
+            } else if (subtitleFormat === "vtt" && index !== -1) {
+                // Even if the subtitle hasn't changed, update the current word
+                updateCurrentWord(currentTime);
+            }
+        }
+        
+        // Custom scroll function that only scrolls the container, not the page
+        function scrollElementIntoViewIfNeeded(element, container) {
+            // Check if element is already in view
+            const containerRect = container.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
+            
+            // Check if element is fully visible in the container
+            const isInView = (
+                elementRect.top >= containerRect.top &&
+                elementRect.bottom <= containerRect.bottom
+            );
+            
+            // Only scroll if the element is not in view
+            if (!isInView) {
+                // Calculate the scroll offset to bring the element into view
+                const scrollTop = element.offsetTop - container.offsetTop - (containerRect.height / 2) + (elementRect.height / 2);
+                
+                // Smooth scroll only the container
+                container.scrollTo({
+                    top: scrollTop,
+                    behavior: 'smooth'
+                });
+            }
+        }
+                    
+        // Update word highlighting (for WebVTT)
+        function updateCurrentWord(currentTime) {
+            // Remove previous active word class
+            const activeWords = subtitleList.querySelectorAll('.word-active');
+            activeWords.forEach(word => word.classList.remove('word-active'));
+            
+            // Find the current word
+            const words = subtitleList.querySelectorAll('.transcript-word');
+            let activeWordFound = false;
+            
+            words.forEach(word => {
+                const start = parseFloat(word.dataset.start);
+                const end = parseFloat(word.dataset.end);
+                
+                if (currentTime >= start && currentTime <= end) {
+                    word.classList.add('word-active');
+                    activeWordFound = true;
+                    
+                    // Only scroll within subtitle list container, not the page
+                    // Check if video is playing before scrolling
+                    const isPlaying = !video.paused;
+                    if (!isPlaying || document.activeElement !== video) {
+                        scrollElementIntoViewIfNeeded(word, subtitleList);
+                    }
+                }
+            });
+            
+            return activeWordFound;
+        } 
+         
+        // Update the paths dropdown
+        function updatePathDropdown() {
+            const savedPaths = JSON.parse(localStorage.getItem('customPaths') || '[]');
+            
+            // Clear existing options except first one
+            while (savedPathsSelect.options.length > 1) {
+                savedPathsSelect.remove(1);
+            }
+            
+            // Add saved paths as options
+            savedPaths.forEach(path => {
+                const option = document.createElement('option');
+                option.value = path;
+                option.textContent = path;
+                savedPathsSelect.appendChild(option);
+            });
+        }
+
+        // Update timeline scale with full SMPTE timecode and proper spacing
+        function updateTimelineScale() {
+            if (!video.duration) return;
+
+            timelineScale.innerHTML = '';
+            const viewStart = 0;  // Always show full timeline
+            const viewEnd = video.duration;
+            const viewDuration = video.duration;
+
+            let interval;
+            const containerWidth = mainTimeline.offsetWidth;
+            const minSpacing = 80; // Minimum pixels between labels for readability
+
+            // Calculate appropriate interval based on duration and available space
+            if (viewDuration <= 10) { // Very short videos - every second
+                interval = 1;
+            } else if (viewDuration <= 60) { // Under 1 minute - every 5 seconds
+                interval = 5;
+            } else if (viewDuration <= 300) { // Under 5 minutes - every 15 seconds
+                interval = 15;
+            } else if (viewDuration <= 900) { // Under 15 minutes - every 30 seconds
+                interval = 30;
+            } else if (viewDuration <= 1800) { // Under 30 minutes - every minute
+                interval = 60;
+            } else if (viewDuration <= 3600) { // Under 1 hour - every 2 minutes
+                interval = 120;
+            } else if (viewDuration <= 7200) { // Under 2 hours - every 5 minutes
+                interval = 300;
+            } else { // Over 2 hours - every 10 minutes
+                interval = 600;
+            }
+
+            // Ensure we don't overcrowd the timeline
+            const expectedLabels = Math.floor(viewDuration / interval);
+            const expectedSpacing = containerWidth / expectedLabels;
+            
+            // If spacing would be too tight, increase interval
+            while (expectedSpacing < minSpacing && interval < 3600) {
+                interval *= 2;
+            }
+
+            const startTime = Math.ceil(viewStart / interval) * interval;
+
+            for (let t = startTime; t <= viewEnd; t += interval) {
+                const position = ((t - viewStart) / viewDuration) * 100;
+                
+                if (position >= 0 && position <= 100) {
+                    const tick = document.createElement('div');
+                    tick.className = 'tick';
+                    tick.style.left = `${position}%`;
+                    
+                    const label = document.createElement('span');
+                    label.className = 'tick-label';
+                    label.style.left = `${position}%`;
+                    // Always use full SMPTE timecode format
+                    label.textContent = toSMPTE(t, frameRate);
+                    
+                    timelineScale.appendChild(tick);
+                    timelineScale.appendChild(label);
+                }
+            }
+
+            // Always add a label at the very beginning if it's not already there
+            if (startTime > 0) {
+                const tick = document.createElement('div');
+                tick.className = 'tick';
+                tick.style.left = '0%';
+                
+                const label = document.createElement('span');
+                label.className = 'tick-label';
+                label.style.left = '0%';
+                label.textContent = toSMPTE(0, frameRate);
+                
+                timelineScale.appendChild(tick);
+                timelineScale.appendChild(label);
+            }
+
+            // Always add a label at the very end
+            const tick = document.createElement('div');
+            tick.className = 'tick';
+            tick.style.left = '100%';
+            
+            const label = document.createElement('span');
+            label.className = 'tick-label';
+            label.style.left = '100%';
+            label.textContent = toSMPTE(video.duration, frameRate);
+            
+            timelineScale.appendChild(tick);
+            timelineScale.appendChild(label);
+        }
+        
+        // ---------- 5. SUBTITLE HANDLING FUNCTIONS ----------
+        // Handle subtitle file selection
+        function handleSubtitleSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    
+                    // Detect file format
+                    if (file.name.endsWith('.vtt')) {
+                        subtitleFormat = "vtt";
+                        // Store original subtitle data
+                        window.originalVttContent = content;
+                        // Parse WebVTT
+                        subtitles = parseWebVTT(content);
+                        wordTimings = extractWordTimings(content);
+                        renderTranscript(content);
+                    } else {
+                        subtitleFormat = "srt";
+                        // Store original subtitle data
+                        window.originalSrtContent = content;
+                        subtitles = parseSRT(content);
+                        renderSubtitleList(subtitles);
+                    }
+                    
+                    // Show transcript tab after loading subtitles
+                    document.getElementById('transcript-tab').click();
+                };
+                reader.readAsText(file);
+            }
+        }
+        
+        // Parse SRT file content
+        function parseSRT(srtContent) {
+            const srtItems = [];
+            
+            // Split the content by double newline (subtitle separator)
+            const subtitleBlocks = srtContent.trim().split(/\r?\n\r?\n/);
+            
+            subtitleBlocks.forEach(block => {
+                const lines = block.split(/\r?\n/);
+                if (lines.length < 3) return; // Skip invalid blocks
+                
+                // First line is the index (ignore)
+                // Second line is the time range
+                const timeRange = lines[1];
+                const timeMatch = timeRange.match(/(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/);
+                
+                if (!timeMatch) return; // Skip invalid time format
+                
+                const startTime = timeToSeconds(timeMatch[1]);
+                const endTime = timeToSeconds(timeMatch[2]);
+                
+                // The rest are subtitle lines
+                const textLines = lines.slice(2);
+                const text = textLines.join(' ').trim();
+                
+                srtItems.push({
+                    startTime,
+                    endTime,
+                    text,
+                    startTimeString: formatTimeForDisplay(startTime)
+                });
+            });
+            
+            return srtItems;
+        }
+        
+        // Parse WebVTT file content
+        function parseWebVTT(vttContent) {
+            const vttItems = [];
+            
+            // Split the content into lines
+            const lines = vttContent.split(/\r?\n/);
+            
+            // Skip the WEBVTT header
+            let inCue = false;
+            let currentCueStart = 0;
+            let currentCueEnd = 0;
+            let currentCueText = "";
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Skip empty lines and WEBVTT header
+                if (!line || line === 'WEBVTT') {
                     continue;
                 }
+                
+                // Check if this is a timestamp line (containing -->)
+                if (line.includes('-->')) {
+                    // If we were in a cue before, push the previous cue
+                    if (inCue && currentCueText) {
+                        vttItems.push({
+                            startTime: currentCueStart,
+                            endTime: currentCueEnd,
+                            text: currentCueText.trim(),
+                            startTimeString: formatTimeForDisplay(currentCueStart)
+                        });
+                    }
+                    
+                    inCue = true;
+                    currentCueText = "";
+                    const timestamps = line.split('-->').map(t => t.trim());
+                    currentCueStart = parseTimestamp(timestamps[0]);
+                    currentCueEnd = parseTimestamp(timestamps[1]);
+                    continue;
+                }
+                
+                // Skip numeric identifiers
+                if (/^\d+$/.test(line)) {
+                    continue;
+                }
+                
+                // If we're in a cue, process the text content
+                if (inCue && line) {
+                    // Clean the text by removing both opening and closing tags
+                    const cleanLine = line.replace(/<\d\d:\d\d:\d\d\.\d\d\d>|<\/\d\d:\d\d:\d\d\.\d\d\d>/g, '');
+                    currentCueText += (currentCueText ? " " : "") + cleanLine;
+                }
+            }
+            
+            // Add the last cue if needed
+            if (inCue && currentCueText) {
+                vttItems.push({
+                    startTime: currentCueStart,
+                    endTime: currentCueEnd,
+                    text: currentCueText.trim(),
+                    startTimeString: formatTimeForDisplay(currentCueStart)
+                });
+            }
+            
+            return vttItems;
+        }
+        
+        // Extract word-level timing from WebVTT file
+        function extractWordTimings(vttContent) {
+            const words = [];
+            
+            // Split the content into lines
+            const lines = vttContent.split(/\r?\n/);
+            let currentCueStart = 0;
+            let currentCueEnd = 0;
+            
+            // Process each line
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Skip empty lines and WEBVTT header
+                if (!line || line === 'WEBVTT') {
+                    continue;
+                }
+                
+                // Check if this is a timestamp line (containing -->)
+                if (line.includes('-->')) {
+                    const timestamps = line.split('-->').map(t => t.trim());
+                    currentCueStart = parseTimestamp(timestamps[0]);
+                    currentCueEnd = parseTimestamp(timestamps[1]);
+                    continue;
+                }
+                
+                // Skip numeric identifiers
+                if (/^\d+$/.test(line)) {
+                    continue;
+                }
+                
+                // Match pattern: <00:00:00.000>word</00:00:00.000>
+                const wordMatches = line.match(/<(\d\d:\d\d:\d\d\.\d\d\d)>([^<]+)<\/\d\d:\d\d:\d\d\.\d\d\d>/g);
+                
+                if (wordMatches && wordMatches.length > 0) {
+                    for (let j = 0; j < wordMatches.length; j++) {
+                        const wordMatch = wordMatches[j];
+                        // Extract the timestamp and word text
+                        const timeMatch = wordMatch.match(/<(\d\d:\d\d:\d\d\.\d\d\d)>([^<]+)<\/\d\d:\d\d:\d\d\.\d\d\d>/);
+                        
+                        if (timeMatch && timeMatch.length >= 3) {
+                            const timeStr = timeMatch[1];
+                            const word = timeMatch[2].trim();
+                            const startTime = parseTimestamp(timeStr);
+                            
+                            // Calculate end time (use next word start or cue end)
+                            let endTime;
+                            if (j < wordMatches.length - 1) {
+                                const nextTimeMatch = wordMatches[j+1].match(/<(\d\d:\d\d:\d\d\.\d\d\d)>/);
+                                if (nextTimeMatch && nextTimeMatch.length >= 2) {
+                                    endTime = parseTimestamp(nextTimeMatch[1]);
+                                } else {
+                                    endTime = currentCueEnd;
+                                }
+                            } else {
+                                endTime = currentCueEnd;
+                            }
+                            
+                            words.push({
+                                text: word,
+                                startTime,
+                                endTime
+                            });
+                        }
+                    }
+                }
+            }
+            
+            return words;
+        }
+        
+        // Render the subtitle list for SRT format
+        function renderSubtitleList(subtitlesToRender) {
+            subtitleList.innerHTML = '';
+            
+            if (subtitlesToRender.length === 0) {
+                subtitleList.innerHTML = '<p class="info-text">No subtitles found or match your search.</p>';
+                return;
+            }
+            
+            subtitlesToRender.forEach((subtitle, index) => {
+                const subtitleItem = document.createElement('div');
+                subtitleItem.className = 'subtitle-item';
+                subtitleItem.dataset.index = index;
+                // Add start and end times to dataset for easy access
+                subtitleItem.dataset.startTime = subtitle.startTime;
+                subtitleItem.dataset.endTime = subtitle.endTime;
+                
+                subtitleItem.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="time-stamp">${subtitle.startTimeString}</span>
+                        <button class="create-marker-from-subtitle" title="Create marker from this subtitle">+</button>
+                    </div>
+                    <span class="subtitle-text">${subtitle.text}</span>
+                `;
+                
+                // Click to set IN/OUT points
+                subtitleItem.addEventListener('click', (e) => {
+                     // Don't trigger if the 'add marker' button was clicked
+                    if(e.target.classList.contains('create-marker-from-subtitle')) return;
+                    
+                    setSelectionRange(subtitle.startTime, subtitle.endTime);
+                    seekTo(subtitle.startTime);
+                    video.pause();
+                });
+                
+                // Add marker from subtitle
+                subtitleItem.querySelector('.create-marker-from-subtitle').addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent seeking
+                    createMarkerFromSubtitle(subtitle);
+                });
+                
+                subtitleList.appendChild(subtitleItem);
+            });
+        }
+        
+        // Render the transcript for WebVTT with word-level timing
+        function renderTranscript(vttContent) {
+            subtitleList.innerHTML = '';
+            
+            if (wordTimings.length === 0) {
+                // If no word-level timing available, use subtitles
+                renderSubtitleList(subtitles);
+                return;
+            }
+            
+            const transcriptContainer = document.createElement('div');
+            transcriptContainer.className = 'json-transcript';
+            
+            // Create a container for each segment (reusing the JSON UI components)
+            let currentSegmentIndex = 0;
+            let segmentContainer = document.createElement('div');
+            segmentContainer.className = 'transcript-segment';
+            segmentContainer.dataset.index = currentSegmentIndex;
 
+            if (subtitles.length > 0) {
+                segmentContainer.dataset.startTime = subtitles[0].startTime;
+                segmentContainer.dataset.endTime = subtitles[0].endTime;
+            }
+            
+            // Add timestamp at the beginning of first segment
+            if (subtitles.length > 0) {
+                const timeStamp = document.createElement('span');
+                timeStamp.className = 'time-stamp';
+                timeStamp.textContent = formatTimeForDisplay(subtitles[0].startTime);
+                segmentContainer.appendChild(timeStamp);
+                
+                // Add create marker button
+                const createMarkerBtn = document.createElement('button');
+                createMarkerBtn.className = 'create-marker-from-subtitle float-end';
+                createMarkerBtn.title = 'Create marker from this segment';
+                createMarkerBtn.textContent = '+';
+                createMarkerBtn.dataset.segmentIndex = '0';
+                createMarkerBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const segmentIndex = parseInt(this.dataset.segmentIndex);
+                    createMarkerFromSubtitle(subtitles[segmentIndex]);
+                });
+                segmentContainer.appendChild(createMarkerBtn);
+            }
+            
+            // Process each word
+            wordTimings.forEach((word, index) => {
+                // Find which segment this word belongs to
+                while (currentSegmentIndex < subtitles.length - 1 && 
+                        word.startTime >= subtitles[currentSegmentIndex + 1].startTime) {
+                    // Finish current segment
+                    transcriptContainer.appendChild(segmentContainer);
+                    
+                    // Start new segment
+                    currentSegmentIndex++;
+                    segmentContainer = document.createElement('div');
+                    segmentContainer.className = 'transcript-segment';
+                    segmentContainer.dataset.index = currentSegmentIndex;
+                    segmentContainer.dataset.startTime = subtitles[currentSegmentIndex].startTime;
+                    segmentContainer.dataset.endTime = subtitles[currentSegmentIndex].endTime;
+                    
+                    // Add timestamp for the new segment
+                    const timeStamp = document.createElement('span');
+                    timeStamp.className = 'time-stamp';
+                    timeStamp.textContent = formatTimeForDisplay(subtitles[currentSegmentIndex].startTime);
+                    segmentContainer.appendChild(timeStamp);
+                    
+                    // Add create marker button
+                    const createMarkerBtn = document.createElement('button');
+                    createMarkerBtn.className = 'create-marker-from-subtitle float-end';
+                    createMarkerBtn.title = 'Create marker from this segment';
+                    createMarkerBtn.textContent = '+';
+                    createMarkerBtn.dataset.segmentIndex = currentSegmentIndex.toString();
+                    createMarkerBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const segmentIndex = parseInt(this.dataset.segmentIndex);
+                        createMarkerFromSubtitle(subtitles[segmentIndex]);
+                    });
+                    segmentContainer.appendChild(createMarkerBtn);
+                }
+                
+                // Create word span
+                const wordSpan = document.createElement('span');
+                wordSpan.className = 'transcript-word';
+                wordSpan.textContent = word.text;
+                wordSpan.dataset.start = word.startTime;
+                wordSpan.dataset.end = word.endTime;
+                
+                // Click handler to set IN/OUT range for the word
+                wordSpan.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    setSelectionRange(word.startTime, word.endTime);
+                    seekTo(word.startTime);
+                    video.pause();
+                });
+                
+                segmentContainer.appendChild(wordSpan);
+                
+                // Add space after each word
+                if (index < wordTimings.length - 1) {
+                    segmentContainer.appendChild(document.createTextNode(' '));
+                }
+            });
 
-                statusDiv.textContent = `Extracting segment ${i + 1}/${segmentsToKeep.length}...`;
-                ffmpegLogPre.textContent += `\n--- Extracting segment ${i + 1} ---\nStart: ${start}s, Duration: ${duration}s\nOutput: ${tempOutputFilename}\n`;
-                console.log(`Running FFmpeg for segment ${i}: -ss ${start} -i ${inputFilename} -t ${duration} -c copy -map 0 -avoid_negative_ts make_zero ${tempOutputFilename}`);
-
-
-                 // Ensure temp file system is clean
-                 try {
-                     if (ffmpeg.FS('readdir', '/').includes(tempOutputFilename)) {
-                         ffmpeg.FS('unlink', tempOutputFilename);
-                     }
-                 } catch(e) { /* Ignore */ }
-
-                // FFmpeg command to extract one segment losslessly
-                await ffmpeg.run(
-                    '-ss', start,        // Seek to start time (input option)
-                    '-i', inputFilename,
-                    '-t', duration,      // Specify duration (output option relative to -ss)
-                    '-c', 'copy',        // Copy codecs losslessly
-                    '-map', '0',         // Map all streams (video, audio, potentially data)
-                    '-avoid_negative_ts', 'make_zero', // Adjust timestamps to start near zero for concat
-                     '-movflags', '+faststart', // Ensures moov atom is at the beginning (good practice)
-                    tempOutputFilename
-                );
-                ffmpegLogPre.textContent += `Segment ${i+1} extracted.\n`;
-                segmentFiles.push(tempOutputFilename);
-                concatFileContent += `file '${tempOutputFilename}'\n`;
+            // Add click handler for the entire segment to select its range
+            transcriptContainer.querySelectorAll('.transcript-segment').forEach(seg => {
+                seg.addEventListener('click', function(e) {
+                    // Only fire if the segment itself is clicked, not a word or button inside it
+                    if (e.target.classList.contains('transcript-word') || e.target.classList.contains('create-marker-from-subtitle')) return;
+                    
+                    const start = parseFloat(this.dataset.startTime);
+                    const end = parseFloat(this.dataset.endTime);
+                    setSelectionRange(start, end);
+                    seekTo(start);
+                    video.pause();
+                });
+            });
+            
+            // Add the final segment
+            if (segmentContainer.childNodes.length > 0) {
+                transcriptContainer.appendChild(segmentContainer);
+            }
+            
+            subtitleList.appendChild(transcriptContainer);
+        }
+        
+        function filterSubtitles() {
+            const searchTerm = searchBox.value.toLowerCase().trim();
+            
+            // Reset highlights and state
+            document.querySelectorAll('.search-match, .current-match').forEach(el => {
+                el.classList.remove('search-match', 'current-match');
+                const originalText = el.dataset.originalText;
+                if (originalText) {
+                    el.innerHTML = originalText;
+                }
+            });
+            searchMatches = [];
+            currentMatchIndex = -1;
+            updateSearchResultsUI();
+            
+            if (!searchTerm) {
+                if (subtitleFormat === "vtt") {
+                    subtitleList.querySelectorAll('.transcript-word').forEach(word => {
+                        word.classList.remove('search-match', 'current-match');
+                    });
+                }
+                return;
             }
 
-             // Adjust total stages if some were skipped
-             totalStages = segmentFiles.length + 1;
+            let matchesFound = [];
 
-            if (segmentFiles.length === 0) {
-                 throw new Error("No valid segments were extracted.");
-             } else if (segmentFiles.length === 1) {
-                // If only one segment, just rename it, no need to concat
-                statusDiv.textContent = 'Only one segment, renaming...';
-                ffmpegLogPre.textContent += '\n--- Only one segment, renaming ---\n';
-                ffmpeg.FS('rename', segmentFiles[0], outputFilename);
-                ffmpegLogPre.textContent += `Renamed ${segmentFiles[0]} to ${outputFilename}\n`;
+            if (subtitleFormat === 'vtt' && wordTimings.length > 0) {
+                const allWords = Array.from(subtitleList.querySelectorAll('.transcript-word'));
+                const searchWords = searchTerm.split(/\s+/);
 
-             } else {
-                 // Create the concat list file in FFmpeg's FS
-                 ffmpegLogPre.textContent += '\n--- Concatenating segments ---\n';
-                 ffmpeg.FS('writeFile', concatListFilename, concatFileContent);
-                 ffmpegLogPre.textContent += `Created ${concatListFilename}\n`;
+                for (let i = 0; i <= allWords.length - searchWords.length; i++) {
+                    let potentialMatch = [];
+                    let fullMatch = true;
+                    for (let j = 0; j < searchWords.length; j++) {
+                        const wordElement = allWords[i + j];
+                        const wordText = wordElement.textContent.toLowerCase();
+                        if (wordText.includes(searchWords[j])) {
+                            potentialMatch.push(wordElement);
+                        } else {
+                            fullMatch = false;
+                            break;
+                        }
+                    }
 
-                 // Concatenate segments
-                 currentStage = segmentFiles.length; // The final concat stage (0-based index)
-                 statusDiv.textContent = `Concatenating ${segmentFiles.length} segments...`;
-                 console.log(`Running FFmpeg for concat: -f concat -safe 0 -i ${concatListFilename} -c copy ${outputFilename}`);
-                 ffmpegLogPre.textContent += `Running concat command...\n`;
+                    if (fullMatch) {
+                        let isContiguous = true;
+                        for (let k = 0; k < potentialMatch.length - 1; k++) {
+                            const end = parseFloat(potentialMatch[k].dataset.end);
+                            const start = parseFloat(potentialMatch[k+1].dataset.start);
+                            if (start - end > 1.0) {
+                                isContiguous = false;
+                                break;
+                            }
+                        }
 
-                  // Ensure output file doesn't exist
-                 try {
-                     if (ffmpeg.FS('readdir', '/').includes(outputFilename)) {
-                         ffmpeg.FS('unlink', outputFilename);
-                     }
-                 } catch(e) { /* Ignore */ }
-
-                 // FFmpeg command to concatenate using the demuxer (lossless)
-                 await ffmpeg.run(
-                     '-f', 'concat',
-                     '-safe', '0', // Allow relative paths in the list file (needed for FS)
-                     '-i', concatListFilename,
-                     '-c', 'copy', // Lossless copy
-                      '-movflags', '+faststart', // Good practice for web video
-                     outputFilename
-                 );
-                 ffmpegLogPre.textContent += `Concatenation complete: ${outputFilename}\n`;
-             }
-
-            // 4. Retrieve Output Video
-            statusDiv.textContent = 'Processing complete. Retrieving output file...';
-            ffmpegLogPre.textContent += 'Reading output file from memory...\n';
-            const outputData = ffmpeg.FS('readFile', outputFilename);
-
-            // 5. Create Download Link for Video
-            createDownloadLink(outputData, outputFilename, 'video/mp4');
-            statusDiv.textContent = 'Processed video ready for download!';
-            ffmpegLogPre.textContent += 'Video download link created.\n';
-
-
-            // 6. (Optional) Process Subtitles
-            if (subtitleFile) {
-                statusDiv.textContent = 'Processing subtitles...';
-                ffmpegLogPre.textContent += '\n--- Processing Subtitles ---\n';
-                try {
-                     const subtitleText = await subtitleFile.text();
-                     const subtitleType = subtitleFile.name.toLowerCase().endsWith('.srt') ? 'srt' : 'vtt';
-                     ffmpegLogPre.textContent += `Type: ${subtitleType}, Original file: ${subtitleFile.name}\n`;
-                     const processedSubs = processSubtitles(subtitleText, subtitleType, segmentsToKeep);
-                     const subOutputFilename = `processed_subs_${Date.now()}.${subtitleType}`;
-                     createDownloadLink(processedSubs, subOutputFilename, `text/${subtitleType}`); // Use specific mime type
-                     statusDiv.textContent = 'Video & Subtitles ready for download!';
-                     ffmpegLogPre.textContent += `Processed subtitles ready: ${subOutputFilename}\n`;
-                 } catch (subError) {
-                     console.error("Subtitle processing error:", subError);
-                     statusDiv.textContent += ` (Subtitle processing failed: ${subError.message})`;
-                     ffmpegLogPre.textContent += `ERROR processing subtitles: ${subError.message}\n`;
+                        if(isContiguous) {
+                            matchesFound.push(potentialMatch);
+                            i += potentialMatch.length -1;
+                        }
+                    }
                 }
-             }
+                matchesFound.forEach(phrase => phrase.forEach(word => word.classList.add('search-match')));
+            
+            } else {
+                const items = subtitleList.querySelectorAll('.subtitle-item, .transcript-segment');
+                items.forEach(item => {
+                    const textElement = item.querySelector('.subtitle-text') || item;
+                    const originalText = textElement.textContent;
+                    if (originalText.toLowerCase().includes(searchTerm)) {
+                        if(item.classList.contains('subtitle-item')) {
+                            const regex = new RegExp(`(${searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi');
+                            textElement.dataset.originalText = originalText;
+                            textElement.innerHTML = originalText.replace(regex, '<span class="search-match">$1</span>');
+                        } else {
+                            item.classList.add('search-match');
+                        }
+                        matchesFound.push(item);
+                    }
+                });
+            }
+            
+            if (matchesFound.length > 0) {
+                searchMatches = matchesFound;
+                currentMatchIndex = 0;
+                highlightCurrentMatch();
+            }
 
-            // 7. Cleanup FFmpeg virtual filesystem (important for memory)
-             ffmpegLogPre.textContent += '\n--- Cleaning up memory ---\n';
-             try {
-                 ffmpeg.FS('unlink', inputFilename);
-                  ffmpegLogPre.textContent += `Unlinked ${inputFilename}\n`;
-                 if (segmentFiles.length > 1) {
-                     ffmpeg.FS('unlink', concatListFilename);
-                     ffmpegLogPre.textContent += `Unlinked ${concatListFilename}\n`;
-                 }
-                 segmentFiles.forEach(fname => {
-                     try {
-                        ffmpeg.FS('unlink', fname);
-                         ffmpegLogPre.textContent += `Unlinked ${fname}\n`;
-                     } catch (e) { console.warn(`Minor error unlinking segment ${fname}:`, e); }
-                 });
-                 ffmpeg.FS('unlink', outputFilename);
-                  ffmpegLogPre.textContent += `Unlinked ${outputFilename}\n`;
-             } catch (unlinkError) {
-                 console.warn("Minor error during FS cleanup:", unlinkError);
-                  ffmpegLogPre.textContent += `Warning during cleanup: ${unlinkError.message}\n`;
-             }
-
-
-        } catch (error) {
-            console.error("Processing Error:", error);
-            statusDiv.textContent = `Error: ${error.message}. Check console & log.`;
-            ffmpegLogPre.textContent += `\n\n ***** PROCESSING ERROR *****\n${error.stack || error.message}\n`;
-            alert(`An error occurred during processing: ${error.message}`);
-        } finally {
-            setLoadingState(false, statusDiv.textContent); // Keep last status message
-            window.updateOverallProgress = null; // Clear global helper
-             ffmpegLogPre.textContent += '\nProcessing routine finished.\n';
-             requestAnimationFrame(() => { // Ensure scroll happens after final text update
-                 ffmpegLogPre.scrollTop = ffmpegLogPre.scrollHeight;
-             });
+            updateSearchResultsUI();
         }
-    });
+        
+        function navigateToPreviousMatch() {
+            if (searchMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex > 0) ? currentMatchIndex - 1 : searchMatches.length - 1;
+            highlightCurrentMatch();
+        }
 
-    // --- Helper Functions ---
+        function navigateToNextMatch() {
+            if (searchMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex < searchMatches.length - 1) ? currentMatchIndex + 1 : 0;
+            highlightCurrentMatch();
+        }
+        
+        function highlightCurrentMatch() {
+            document.querySelectorAll('.current-match').forEach(el => el.classList.remove('current-match'));
+            
+            if (searchMatches.length === 0 || currentMatchIndex === -1) return;
 
-    function calculateKeepSegments(clips, mode, frameRate, totalDurationSec) {
-        // Validate clips structure
-         if (!clips || !Array.isArray(clips)) {
-             throw new Error("Invalid 'clips' data in JSON.");
-         }
+            const currentMatch = searchMatches[currentMatchIndex];
+            let firstElement;
+            let selectionStart, selectionEnd;
+            
+            if (Array.isArray(currentMatch)) { // VTT Phrase Match
+                currentMatch.forEach(el => el.classList.add('current-match'));
+                firstElement = currentMatch[0];
+                selectionStart = parseFloat(firstElement.dataset.start);
+                selectionEnd = parseFloat(currentMatch[currentMatch.length - 1].dataset.end);
+            } else { // SRT Item or VTT Segment Match
+                currentMatch.classList.add('current-match');
+                firstElement = currentMatch;
+                if (firstElement.classList.contains('transcript-word')) {
+                    selectionStart = parseFloat(firstElement.dataset.start);
+                    selectionEnd = parseFloat(firstElement.dataset.end);
+                } else { // subtitle-item or transcript-segment
+                    const index = parseInt(firstElement.dataset.index);
+                    if (!isNaN(index) && subtitles[index]) {
+                        selectionStart = subtitles[index].startTime;
+                        selectionEnd = subtitles[index].endTime;
+                    }
+                }
+            }
 
-        // Convert JSON clip frames to time segments in seconds
-        const jsonSegments = clips.map((clip, index) => {
-             // Add validation for individual clip structure
-             if (typeof clip.start !== 'number' || typeof clip.end !== 'number') {
-                 throw new Error(`Invalid start/end type in clip index ${index}. Expected numbers.`);
-             }
-             if (clip.start < 0 || clip.end < 0) {
-                 throw new Error(`Negative start/end frame in clip index ${index}.`);
-             }
-             if (clip.end <= clip.start) {
-                 console.warn(`Clip index ${index} has end frame <= start frame (${clip.end} <= ${clip.start}). It will be ignored or result in zero duration.`);
-             }
+            if (firstElement) {
+                scrollElementIntoViewIfNeeded(firstElement, subtitleList);
+            }
+            
+            if(selectionStart !== undefined && selectionEnd !== undefined) {
+                setSelectionRange(selectionStart, selectionEnd);
+            }
 
-            return {
-                start: clip.start / frameRate,
-                end: clip.end / frameRate
+            updateSearchResultsUI();
+        }
+        
+        function setupVideoFocusHandling() {
+            video.addEventListener('play', function() {
+                video.focus();
+            });
+            
+            document.querySelector('#play-pause').addEventListener('click', function() {
+                if (video.paused) {
+                    video.focus();
+                }
+            });
+            
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab' && !video.paused) {
+                    e.preventDefault();
+                }
+            });
+        }
+        
+        function createMarkerFromSubtitle(subtitle) {
+            if (!video.duration) return;
+            
+            setSelectionRange(subtitle.startTime, subtitle.endTime);
+            
+            const newMarker = {
+                start: subtitle.startTime,
+                end: subtitle.endTime,
+                duration: subtitle.endTime - subtitle.startTime,
+                subtitles: [{
+                    text: subtitle.text,
+                    start: Math.round(subtitle.startTime * frameRate),
+                    end: Math.round(subtitle.endTime * frameRate)
+                }]
             };
-         }).sort((a, b) => a.start - b.start); // Sort by start time is crucial
+            
+            markers.push(newMarker);
+            activeMarkerIndex = markers.length - 1;
+            updateMarkersList();
+            document.getElementById('markers-tab').click();
+        }
+        
+        // MODIFIED to include padding logic
+        function addSearchResultsAsMarkers() {
+            if (!searchMatches.length || !video.duration) {
+                alert('No search results found or video not loaded.');
+                return;
+            }
+            
+            const applyPadding = applySearchPaddingCheckbox.checked;
+            let paddingDuration = 0;
+            let paddingMode = 'mid';
 
-        let keepSegments = [];
+            if (applyPadding) {
+                const minutes = parseInt(minutesInput.value) || 0;
+                const seconds = parseInt(secondsInput.value) || 0;
+                const frames = parseInt(framesInput.value) || 0;
+                paddingDuration = minutes * 60 + seconds + (frames / frameRate);
+                paddingMode = playheadPositionSelect.value;
 
-        if (mode === 'keep') {
-            // Directly use the sorted, valid segments, merging overlapping/touching ones
-            if (jsonSegments.length === 0) return [];
+                if(paddingDuration <= 0) {
+                    alert("Please set a positive duration in the 'Precise Range Duration' controls to use for padding.");
+                    return;
+                }
+            }
+            
+            let newMarkersCount = 0;
+            searchMatches.forEach(match => {
+                let originalStart, originalEnd, text;
+                if(Array.isArray(match)) { // VTT Phrase
+                    originalStart = parseFloat(match[0].dataset.start);
+                    originalEnd = parseFloat(match[match.length-1].dataset.end);
+                    text = match.map(el => el.textContent).join(' ');
+                } else { // SRT item or VTT segment
+                    const index = parseInt(match.dataset.index);
+                    if(!isNaN(index) && subtitles[index]) {
+                        const sub = subtitles[index];
+                        originalStart = sub.startTime;
+                        originalEnd = sub.endTime;
+                        text = sub.text;
+                    }
+                }
 
-            let currentSegment = { ...jsonSegments[0] }; // Start with the first
+                if(originalStart !== undefined) {
+                    let finalStart = originalStart;
+                    let finalEnd = originalEnd;
 
-             for (let i = 1; i < jsonSegments.length; i++) {
-                 const nextSegment = jsonSegments[i];
-                 // Merge if next starts at or before current ends
-                 if (nextSegment.start <= currentSegment.end) {
-                     currentSegment.end = Math.max(currentSegment.end, nextSegment.end); // Extend end
-                 } else {
-                     // If gap, push the completed current segment and start a new one
-                     if (currentSegment.end > currentSegment.start) { // Ensure non-zero duration
-                         keepSegments.push({
-                             start: Math.max(0, currentSegment.start), // Clamp start at 0
-                             end: Math.min(totalDurationSec, currentSegment.end) // Clamp end at total duration
-                         });
-                     }
-                     currentSegment = { ...nextSegment };
-                 }
-             }
-             // Push the last processed segment
-             if (currentSegment.end > currentSegment.start) {
-                 keepSegments.push({
-                     start: Math.max(0, currentSegment.start),
-                     end: Math.min(totalDurationSec, currentSegment.end)
-                 });
-             }
+                    if (applyPadding) {
+                        switch (paddingMode) {
+                            case 'in':
+                                finalStart = originalStart;
+                                finalEnd = originalStart + paddingDuration;
+                                break;
+                            case 'out':
+                                finalEnd = originalEnd;
+                                finalStart = originalEnd - paddingDuration;
+                                break;
+                            case 'mid':
+                                const midpoint = originalStart + (originalEnd - originalStart) / 2;
+                                finalStart = midpoint - (paddingDuration / 2);
+                                finalEnd = midpoint + (paddingDuration / 2);
+                                break;
+                        }
+                    }
 
-        } else { // mode === 'remove'
-            let lastEndTime = 0;
+                    // Clamp values to video duration
+                    finalStart = Math.max(0, finalStart);
+                    finalEnd = Math.min(video.duration, finalEnd);
 
-            // Iterate through the segments *to be removed* (ensure they are merged/sorted first)
-            // Merging removal segments prevents issues with overlapping removals
-            let mergedRemoveSegments = [];
-             if (jsonSegments.length > 0) {
-                let currentRemove = { ...jsonSegments[0] };
-                 for (let i = 1; i < jsonSegments.length; i++) {
-                     const nextRemove = jsonSegments[i];
-                     if (nextRemove.start <= currentRemove.end) {
-                         currentRemove.end = Math.max(currentRemove.end, nextRemove.end);
-                     } else {
-                          if (currentRemove.end > currentRemove.start) mergedRemoveSegments.push(currentRemove);
-                          currentRemove = { ...nextRemove };
-                     }
-                 }
-                  if (currentRemove.end > currentRemove.start) mergedRemoveSegments.push(currentRemove);
-             }
+                    if (finalStart < finalEnd) {
+                        markers.push({
+                            start: finalStart,
+                            end: finalEnd,
+                            duration: finalEnd - finalStart,
+                            subtitles: [{
+                                text: text,
+                                start: Math.round(finalStart * frameRate),
+                                end: Math.round(finalEnd * frameRate)
+                            }]
+                        });
+                        newMarkersCount++;
+                    }
+                }
+            });
+            
+            if (newMarkersCount > 0) {
+                updateMarkersList();
+                document.getElementById('markers-tab').click();
+                alert(`Added ${newMarkersCount} new markers from search results.`);
+            } else {
+                alert('No valid markers could be created from the search results.');
+            }
+        }
 
+        function updateSearchResultsUI() {
+            const hasMatches = searchMatches.length > 0;
+            
+            searchNavigation.style.display = hasMatches ? 'flex' : 'none';
+            
+            const addMarkersBtn = document.getElementById('add-search-markers');
+            if (addMarkersBtn) {
+                addMarkersBtn.style.display = hasMatches ? 'block' : 'none';
+            }
+            
+            if (hasMatches) {
+                document.getElementById('search-count').textContent = `${currentMatchIndex + 1} of ${searchMatches.length}`;
+            } else {
+                document.getElementById('search-count').textContent = `0 results`;
+            }
+        }
+        
+        // ---------- 6. MARKER HANDLING FUNCTIONS ----------
+        window.loadMarker = function(index) {
+            if (!video.duration || !markers[index]) return;
+            
+            const marker = markers[index];
+            
+            setSelectionRange(marker.start, marker.end);
+            seekTo(marker.start);
 
-            for (const removeSegment of mergedRemoveSegments) {
-                // Ensure removal segment is within bounds and valid
-                const removeStart = Math.max(0, removeSegment.start);
-                const removeEnd = Math.min(totalDurationSec, removeSegment.end);
+            activeMarkerIndex = index;
+            updateMarkersList();
+        };
 
-                if (removeStart < removeEnd) { // Only process valid removal segments
-                     // Add the segment *before* this removal segment
-                     if (removeStart > lastEndTime) {
-                        keepSegments.push({ start: lastEndTime, end: removeStart });
-                     }
-                     // Update the start point for the *next* potential keep segment
-                     lastEndTime = Math.max(lastEndTime, removeEnd);
+        window.addMarker = function() {
+            if (!video.duration) return;
+            
+            let subtitleText = "";
+            let subtitleItems = [];
+            
+            if (subtitleFormat === "vtt" && wordTimings.length > 0) {
+                const wordsInRange = wordTimings.filter(word => 
+                    word.startTime >= currentSelection.start && 
+                    word.endTime <= currentSelection.end
+                );
+                
+                if (wordsInRange.length > 0) {
+                    subtitleText = wordsInRange.map(word => word.text).join(' ');
+                    subtitleItems.push({
+                        text: subtitleText,
+                        start: Math.round(currentSelection.start * frameRate),
+                        end: Math.round(currentSelection.end * frameRate)
+                    });
+                }
+            } else {
+                const overlappingSubtitles = subtitles.filter(subtitle => 
+                    (subtitle.startTime < currentSelection.end && 
+                     subtitle.endTime > currentSelection.start)
+                );
+                
+                if (overlappingSubtitles.length > 0) {
+                    subtitleText = overlappingSubtitles.map(sub => sub.text).join(" ");
+                    subtitleItems.push({
+                        text: subtitleText,
+                        start: Math.round(currentSelection.start * frameRate),
+                        end: Math.round(currentSelection.end * frameRate)
+                    });
+                }
+            }
+            
+            const newMarker = {
+                start: currentSelection.start,
+                end: currentSelection.end,
+                duration: currentSelection.end - currentSelection.start,
+                subtitles: subtitleItems
+            };
+            
+            markers.push(newMarker);
+            activeMarkerIndex = markers.length - 1;
+            updateMarkersList();
+            
+            setTimeout(() => {
+                const newMarkerElement = document.querySelector(`.marker-item[data-index="${activeMarkerIndex}"]`);
+                if (newMarkerElement) {
+                    newMarkerElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }, 100);
+        };
+
+        window.removeMarker = function(index) {
+            if (index === activeMarkerIndex) {
+                activeMarkerIndex = -1;
+            } else if (index < activeMarkerIndex) {
+                activeMarkerIndex--;
+            }
+            
+            markers.splice(index, 1);
+            updateMarkersList();
+        };
+
+        function setInPoint() {
+            if (!video.duration) return;
+            const currentTime = video.currentTime;
+            if (currentTime < currentSelection.end) {
+                setSelectionRange(currentTime, currentSelection.end);
+            } else {
+                setSelectionRange(currentTime, currentTime);
+            }
+        }
+
+        function setOutPoint() {
+            if (!video.duration) return;
+            const currentTime = video.currentTime;
+            if (currentTime > currentSelection.start) {
+                setSelectionRange(currentSelection.start, currentTime);
+            } else {
+                setSelectionRange(currentTime, currentTime);
+            }
+        }
+
+        // ---------- 7. UNIFIED SEEK FUNCTION ----------
+        function seekTo(time) {
+            if (!video.duration) return;
+            
+            // Clamp time to video bounds
+            time = Math.max(0, Math.min(video.duration, time));
+            
+            // Set video time - this will trigger all sync events
+            video.currentTime = time;
+            
+            // Sync waveform if ready
+            if (wavesurfer && wavesurfer.isReady) {
+                wavesurfer.setCurrentTime(time);
+            }
+        }
+        
+        // ---------- 8. FILE HANDLING FUNCTIONS ----------
+        function loadVideo(file) {
+            if (file && file.type.startsWith('video/')) {
+                if (currentVideoUrl) {
+                    URL.revokeObjectURL(currentVideoUrl);
+                }
+                
+                originalFileName = file.name;
+                originalFilePath = file.path || file.webkitRelativePath || `C:/Videos/${file.name}`;
+                
+                currentVideoUrl = URL.createObjectURL(file);
+                video.src = currentVideoUrl;
+                
+                fps_rounder = [];
+                frame_not_seeked = true;
+                
+                audioInfo = { samplerate: null, channelcount: null };
+                currentSubtitleDisplay.textContent = '';
+                resetWaveform();
+                
+                video.onloadedmetadata = async function() {
+                    currentSelection.start = 0;
+                    currentSelection.end = video.duration;
+                    video.requestVideoFrameCallback(ticker);
+                    
+                    frameRate = parseFloat(framerateSelect.value);
+                    frameStep = 1 / frameRate;
+                    
+                    setSelectionRange(0, video.duration);
+                    updateMarkersList();
+                    updateTimelineScale(); // Initialize timeline scale with full video duration
+                    
+                    playPauseBtn.textContent = 'Play';
+                };
+                
+                video.addEventListener('seeked', function() {
+                    fps_rounder.pop();
+                    frame_not_seeked = false;
+                });
+                
+                video.onerror = function() {
+                    console.error('Error loading video:', video.error);
+                    alert('Error loading video. Please try another file.');
+                };
+            } else {
+                alert('Please upload a valid video file.');
+            }
+        }
+        
+        function handleSubtitleFile(file) {
+            if (file) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                subtitleFileInput.files = dataTransfer.files;
+                const event = new Event('change', { bubbles: true });
+                subtitleFileInput.dispatchEvent(event);
+            }
+        }
+        
+        async function handleJSONImport(file) {
+            try {
+                const text = await file.text();
+                const jsonData = JSON.parse(text);
+
+                // Check if it's a project file (with markers and potentially waveform)
+                if (jsonData.video && jsonData.clips) {
+                    // Load markers
+                    if (jsonData.video.file.media.video.timecode.rate.timebase) {
+                        const jsonFrameRate = parseFloat(jsonData.video.file.media.video.timecode.rate.timebase);
+                        framerateSelect.value = jsonFrameRate.toString();
+                        frameRate = jsonFrameRate;
+                        frameStep = 1 / frameRate;
+                    }
+                    
+                    markers = jsonData.clips.map(clip => ({
+                        start: clip.start / frameRate,
+                        end: clip.end / frameRate,
+                        duration: (clip.end - clip.start) / frameRate,
+                        subtitles: clip.subtitles || []
+                    }));
+                    updateMarkersList();
+                    
+                    // Load embedded waveform data if it exists
+                    if (jsonData.waveform) {
+                        importedWaveformData = jsonData.waveform;
+                        loadPeaks(jsonData.waveform);
+                    }
+                } else {
+                    throw new Error('Invalid JSON format. Expected a project file with video and clips data.');
+                }
+            } catch (error) {
+                console.error('Error importing JSON:', error);
+                alert('Error importing project file. Please check the file format.');
+            }
+        }
+        
+        function ticker(useless, metadata) {
+            if (isWaveformReady) return; // Stop ticker if waveform is handling playback updates
+            const media_time_diff = Math.abs(metadata.mediaTime - last_media_time);
+            const frame_num_diff = Math.abs(metadata.presentedFrames - last_frame_num);
+            const diff = media_time_diff / frame_num_diff;
+
+            if (
+                diff &&
+                diff < 1 &&
+                frame_not_seeked &&
+                fps_rounder.length < 50 &&
+                video.playbackRate === 1 &&
+                document.hasFocus()
+            ) {
+                fps_rounder.push(diff);
+                detected_fps = Math.round(1 / get_fps_average());
+                
+                const certainty = fps_rounder.length * 2;
+                detectedFpsDisplay.textContent = `${detected_fps} fps (${certainty}%)`;
+                
+                if (certainty >= 50) {
+                    const closestRate = findClosestFrameRate(detected_fps);
+                    framerateSelect.value = closestRate.toString();
+                    frameRate = closestRate;
+                    frameStep = 1 / frameRate;
+                    updateTimeDisplays();
+                    updateMarkersList();
                 }
             }
 
-            // Add the final segment *after* the last removal segment, if any space remains
-            if (lastEndTime < totalDurationSec) {
-                keepSegments.push({ start: lastEndTime, end: totalDurationSec });
+            frame_not_seeked = true;
+            last_media_time = metadata.mediaTime;
+            last_frame_num = metadata.presentedFrames;
+            video.requestVideoFrameCallback(ticker);
+        }
+        
+        async function detectAudioInfo(video) {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = audioContext.createMediaElementSource(video);
+                    source.connect(audioContext.destination);
+                }
+                return {
+                    samplerate: audioContext.sampleRate,
+                    channelcount: (video.mozChannels || video.webkitAudioChannelCount || 2)
+                };
+            } catch (e) {
+                console.warn('Could not detect audio info:', e);
+                return { samplerate: 48000, channelcount: 2 }; // Default values
             }
         }
-            // Final filter for tiny segments and ensure start < end strictly
-            return keepSegments.filter(seg => (seg.end - seg.start) > 0.001 && seg.start < totalDurationSec);
-    }
+        
+        // ---------- 9. WAVEFORM FUNCTIONS (REVISED FOR SYNC) ----------
+        function initWaveSurfer() {
+            if (wavesurfer) {
+                wavesurfer.destroy();
+            }
 
+            // Initialize WaveSurfer with MediaElement backend for perfect sync
+            wavesurfer = WaveSurfer.create({
+                container: '#waveform',
+                waveColor: '#2a5298',
+                progressColor: '#1e3c72',
+                backend: 'MediaElement',
+                media: video, // Direct connection to video element
+                height: 128,
+                responsive: true,
+                /** Allow clicks on the waveform */
+                interact: true,
+                /** Allow to drag the cursor to seek to a new position */
+                dragToSeek: false,
+                cursorColor: '#ff0000',
+                cursorWidth: 2,
+                plugins: [
+                    WaveSurfer.regions.create({
+                        regionsMinLength: 0.1,
+                        dragSelection: false // Disable drag selection to avoid conflicts
+                    })
+                ]
+            });
 
-    function createDownloadLink(data, filename, mimeType) {
-        // Ensure data is ArrayBuffer or Blob
-        let blob;
-        if (data instanceof Blob) {
-            blob = data;
-        } else if (data instanceof Uint8Array) {
-             blob = new Blob([data.buffer], { type: mimeType });
-        } else if (typeof data === 'string') {
-             blob = new Blob([data], { type: mimeType });
+            // Set up event listeners for synchronization
+            wavesurfer.on('ready', () => {
+                isWaveformReady = true;
+                loadingIndicator.style.display = 'none';
+                waveformScrollContainer.style.display = 'block';
+                
+                // Zoom to show approximately 10 seconds of content
+                const pxPerSec = waveformScrollContainer.clientWidth / 10;
+                wavesurfer.zoom(pxPerSec);
+                
+                setupWaveformInteractions();
+                
+                waveformMessage.textContent = 'Waveform loaded successfully! 🎵 Click anywhere to seek to that position.';
+                waveformMessage.style.color = '#28a745';
+                waveformMessage.style.display = 'block';
+                setTimeout(() => { waveformMessage.style.display = 'none'; }, 6000);
+
+                // Sync initial playhead position
+                updateTimeDisplays();
+            });
+
+            // Fires when user clicks on the waveform
+            wavesurfer.on('seeking', (time) => {
+                seekTo(time);
+            });
+
+            // Sync playback progress
+            wavesurfer.on('audioprocess', () => {
+                updateTimeDisplays();
+                updateCurrentSubtitle();
+            });
+
+            wavesurfer.on('error', (err) => {
+                isWaveformReady = false;
+                waveformGenerationFailed('WaveSurfer error: ' + err);
+            });
+
+            // Enable mouse wheel zoom on waveform
+            const waveformContainer = document.getElementById('waveform');
+            waveformContainer.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0) {
+                    e.preventDefault();
+                    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                    const currentZoom = wavesurfer.params.minPxPerSec;
+                    const newZoom = Math.max(1, Math.min(1000, currentZoom * zoomFactor));
+                    wavesurfer.zoom(newZoom);
+                }
+            });
         }
-         else {
-            console.error("Cannot create download link for data type:", typeof data);
-            return;
+
+        function loadPeaks(jsonData) {
+            if (!video.src) {
+                alert("Please load a video file before loading waveform data.");
+                return;
+            }
+
+            if (!jsonData || !Array.isArray(jsonData.data) || !jsonData.bits) {
+                waveformGenerationFailed("JSON data is not in the expected audiowaveform format.");
+                return;
+            }
+            
+            loadingIndicator.style.display = 'block';
+            waveformMessage.style.display = 'none';
+
+            const processAndLoad = () => {
+                setTimeout(() => {
+                    try {
+                        initWaveSurfer();
+                        
+                        const bits = jsonData.bits;
+                        const divisor = 2 ** (bits - 1);
+                        // Audiowaveform can output a nested array for stereo, we only need one channel.
+                        const data = Array.isArray(jsonData.data[0]) ? jsonData.data[0] : jsonData.data;
+                        const peaks = data.map(p => p / divisor);
+
+                        // Load the media element and peaks together for perfect sync
+                        wavesurfer.load(video, peaks);
+
+                    } catch (err) {
+                         waveformGenerationFailed("Error processing waveform data: " + err.message);
+                    }
+                }, 100);
+            };
+            
+            if (video.readyState > 0 && video.duration) {
+                processAndLoad();
+            } else {
+                video.addEventListener('loadedmetadata', processAndLoad, { once: true });
+            }
         }
 
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.textContent = `Download ${filename}`;
-        a.style.display = 'block'; // Make sure it's visible
-        a.style.margin = '10px 0';
-        a.style.padding = '10px';
-        a.style.border = '1px solid #ccc';
-        a.style.borderRadius = '4px';
-        a.style.textDecoration = 'none';
-        a.style.backgroundColor = '#eee';
-        a.style.color = '#333';
+        function setupWaveformInteractions() {
+            // Remove any previous region
+            wavesurfer.regions.clear();
 
+            // Create a region for the current selection
+            selectionRegion = wavesurfer.regions.add({
+                start: currentSelection.start,
+                end: currentSelection.end,
+                color: 'rgba(33, 150, 243, 0.2)',
+                drag: true,
+                resize: true,
+            });
 
-        // Add event listener to revoke URL after download is initiated
-        a.addEventListener('click', () => {
-            // Revoke after a short delay to ensure download starts
-            setTimeout(() => URL.revokeObjectURL(url), 100);
+            // When user drags the region or its handles
+            selectionRegion.on('update-end', () => {
+                setSelectionRange(selectionRegion.start, selectionRegion.end);
+            });
+        }
+        
+        function waveformGenerationFailed(message) {
+            console.error(message);
+            resetWaveform();
+            
+            waveformMessage.textContent = `Failed: ${message}`;
+            waveformMessage.style.color = '#e74c3c';
+            waveformMessage.style.display = 'block';
+            loadingIndicator.style.display = 'none';
+        }
+        
+        function resetWaveform() {
+            isWaveformReady = false;
+            importedWaveformData = null;
+            selectionRegion = null;
+            waveformScrollContainer.style.display = 'none';
+            if (wavesurfer) {
+                wavesurfer.destroy();
+                wavesurfer = null;
+            }
+            // Re-request the ticker if it was stopped
+            if (video.src) {
+                video.requestVideoFrameCallback(ticker);
+            }
+        }
+        
+        // ---------- 10. MAIN TIMELINE HANDLERS ----------
+        function handleMainTimelineClick(e) {
+            if (!video.duration) return;
+            
+            const rect = mainTimeline.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percent = clickX / rect.width;
+            const newTime = percent * video.duration;
+            
+            seekTo(newTime);
+        }
+
+        function handleMainTimelineDrag(e) {
+            if (!isMainTimelineDragging || !video.duration) return;
+            
+            const rect = mainTimeline.getBoundingClientRect();
+            const dragX = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(1, dragX / rect.width));
+            const newTime = percent * video.duration;
+            
+            seekTo(newTime);
+            e.preventDefault();
+        }
+        
+        // ---------- 11. DRAG AND DROP & MOUSE HANDLERS ----------
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+            
+            const files = Array.from(e.dataTransfer.files);
+            const videoFiles = files.filter(f => f.type.startsWith('video/'));
+            const subtitleFiles = files.filter(f => f.name.endsWith('.srt') || f.name.endsWith('.vtt') || f.name.endsWith('.txt'));
+            const jsonFiles = files.filter(f => f.name.endsWith('.json'));
+            
+            // Prioritize video loading
+            if (videoFiles.length > 0) {
+                loadVideo(videoFiles[0]);
+            }
+
+            // Handle project/marker JSON
+            if (jsonFiles.length > 0) {
+                 handleJSONImport(jsonFiles[0]);
+            }
+
+            if (subtitleFiles.length > 0) handleSubtitleFile(subtitleFiles[0]);
+        }
+        
+        // ---------- 12. UI INITIALIZATION & DYNAMIC SCALE ----------
+        function updateFramesInputMax() {
+            const maxFrames = Math.ceil(frameRate);
+            framesInput.max = maxFrames - 1;
+            framesInput.placeholder = `0-${maxFrames - 1}`;
+            if (parseInt(framesInput.value) >= maxFrames) framesInput.value = 0;
+        }
+        
+        // ---------- 13. EVENT LISTENERS ----------
+        document.getElementById('set-in-point').addEventListener('click', setInPoint);
+        document.getElementById('set-out-point').addEventListener('click', setOutPoint);
+        
+        // Main timeline event listeners
+        mainTimeline.addEventListener('click', handleMainTimelineClick);
+        mainTimeline.addEventListener('mousedown', (e) => {
+            isMainTimelineDragging = true;
+            handleMainTimelineClick(e);
+            e.preventDefault();
         });
 
-        downloadArea.appendChild(a);
-    }
+        document.addEventListener('mousemove', handleMainTimelineDrag);
+        document.addEventListener('mouseup', () => {
+            isMainTimelineDragging = false;
+        });
 
+        document.addEventListener('selectstart', e => { 
+            if (isMainTimelineDragging) e.preventDefault(); 
+        });
 
-    // --- Subtitle Processing ---
-
-    // Simple time string (HH:MM:SS.ms or MM:SS.ms or H:MM:SS.ms etc) to seconds converter
-    function timeToSeconds(timeStr) {
-        if (!timeStr || typeof timeStr !== 'string') return NaN;
-        const parts = timeStr.split(':');
-        let seconds = 0;
-        const msSeparator = timeStr.includes(',') ? ',' : '.'; // Handle both SRT and VTT separators
-        try {
-            if (parts.length === 3) { // H:MM:SS.ms
-                const secParts = parts[2].split(msSeparator);
-                seconds += parseInt(parts[0], 10) * 3600;
-                seconds += parseInt(parts[1], 10) * 60;
-                seconds += parseInt(secParts[0], 10);
-                if (secParts.length > 1) seconds += parseInt(secParts[1].padEnd(3, '0'), 10) / 1000;
-            } else if (parts.length === 2) { // MM:SS.ms
-                const secParts = parts[1].split(msSeparator);
-                seconds += parseInt(parts[0], 10) * 60;
-                seconds += parseInt(secParts[0], 10);
-                if (secParts.length > 1) seconds += parseInt(secParts[1].padEnd(3, '0'), 10) / 1000;
+        playPauseBtn.addEventListener('click', () => {
+            if (video.paused) {
+                video.play();
             } else {
-                console.warn("Unsupported time format:", timeStr);
-                return NaN;
+                video.pause();
             }
-            return seconds;
-        } catch (e) {
-             console.warn("Error parsing time string:", timeStr, e);
-             return NaN;
-        }
-    }
+        });
 
+        stopBtn.addEventListener('click', () => {
+            video.pause();
+            seekTo(0);
+        });
 
-    // Seconds to VTT/SRT time string (HH:MM:SS.ms)
-    function secondsToTime(totalSeconds, format = 'vtt') {
-         if (isNaN(totalSeconds) || totalSeconds < 0) return `00:00:00${format === 'vtt' ? '.' : ','}000`;
-
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = Math.floor(totalSeconds % 60);
-        const milliseconds = Math.round((totalSeconds % 1) * 1000); // Use round for better accuracy
-
-        const sep = format === 'vtt' ? '.' : ',';
-
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}${sep}${String(milliseconds).padStart(3, '0')}`;
-    }
-
-
-    function processSubtitles(subtitleText, type, keepSegments) {
-        const lines = subtitleText.split(/\r?\n/);
-        let outputLines = [];
-        let cue = null;
-        // Matches VTT/SRT timecodes, allowing for variations in hours digits
-        const timePattern = /(\d{1,2}:\d{2}:\d{2}[.,]\d{3})\s+-->\s+(\d{1,2}:\d{2}:\d{2}[.,]\d{3})/;
-
-        if (type === 'vtt') {
-             outputLines.push('WEBVTT'); // VTT Header is mandatory
-             // Look for potential VTT header metadata immediately after WEBVTT
-             let i = 1;
-             while(lines[i] && lines[i].trim() !== '' && !lines[i].match(timePattern)) {
-                 outputLines.push(lines[i]);
-                 i++;
-             }
-             outputLines.push(''); // Ensure blank line after header block
-         }
-
-        // Use English state names for better code clarity
-        let parsingState = 'looking_for_cue_id_or_time';
-        let cueHeaderLines = [];
-        let cueTextLines = [];
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i]; // Don't trim yet, preserve potential VTT metadata spacing
-            const trimmedLine = line.trim();
-            const timeMatch = trimmedLine.match(timePattern);
-
-            // --- State Machine Logic ---
-
-            if (parsingState === 'looking_for_cue_id_or_time') {
-                if (trimmedLine === '') {
-                     continue; // Skip blank lines between cues
-                 } else if (timeMatch) {
-                     // Found time directly (likely SRT or simple VTT)
-                     parsingState = 'looking_for_text';
-                     cue = {
-                        originalStart: timeToSeconds(timeMatch[1]),
-                        originalEnd: timeToSeconds(timeMatch[2]),
-                        headerLines: cueHeaderLines, // Capture preceding lines (like SRT number)
-                        timeLine: line // Store the original time line format
-                     };
-                     cueHeaderLines = []; // Reset for next cue
-                     cueTextLines = [];
-                 } else {
-                     // Assume it's a cue identifier (SRT number or VTT ID)
-                     cueHeaderLines.push(line);
-                     parsingState = 'looking_for_time';
-                 }
-            } else if (parsingState === 'looking_for_time') {
-                if (timeMatch) {
-                     parsingState = 'looking_for_text';
-                     cue = {
-                        originalStart: timeToSeconds(timeMatch[1]),
-                        originalEnd: timeToSeconds(timeMatch[2]),
-                        headerLines: cueHeaderLines,
-                        timeLine: line // Store the original time line format
-                     };
-                     cueHeaderLines = []; // Reset
-                     cueTextLines = [];
-                 } else if (trimmedLine === '') {
-                     // Invalid structure? Blank line after identifier but before time. Reset.
-                     console.warn("Subtitle Parse Warning: Blank line encountered after identifier but before timecode near line:", i);
-                     parsingState = 'looking_for_cue_id_or_time';
-                     cueHeaderLines = []; // Discard potentially partial cue header
-                 } else {
-                     // Could be multi-line VTT identifier or settings, keep accumulating header lines
-                      cueHeaderLines.push(line);
-                      // Stay in 'looking_for_time' state
-                 }
-            } else if (parsingState === 'looking_for_text') {
-                 if (trimmedLine === '') {
-                     // End of the current cue text block
-                     if (cue) {
-                         // Process the completed cue
-                         let { adjustedStart, adjustedEnd, belongs } = checkAndAdjustCueTime(cue.originalStart, cue.originalEnd, keepSegments);
-                         if (belongs && !isNaN(adjustedStart) && !isNaN(adjustedEnd)) {
-                              // Reconstruct timing line with original formatting but adjusted times
-                             const adjustedTimeLine = cue.timeLine.replace(timePattern, `${secondsToTime(adjustedStart, type)} --> ${secondsToTime(adjustedEnd, type)}`);
-
-                             outputLines.push(...cue.headerLines); // Add ID/number lines
-                             outputLines.push(adjustedTimeLine); // Add adjusted time line
-                             outputLines.push(...cueTextLines); // Add text lines
-                             outputLines.push(''); // Add blank line separator
-                         }
-                         cue = null; // Reset cue
-                     }
-                     parsingState = 'looking_for_cue_id_or_time'; // Ready for the next cue identifier/time
-                     cueHeaderLines = []; // Reset headers just in case
-                     cueTextLines = [];
-                 } else {
-                     // Add text line to current cue
-                     cueTextLines.push(line);
-                 }
+        repeatBtn.addEventListener('click', () => {
+            isLooping = !isLooping;
+            repeatBtn.classList.toggle('active', isLooping);
+            if (isLooping && video.paused) {
+                seekTo(currentSelection.start);
+                video.play();
             }
+        });
+
+        frameBackBtn.addEventListener('click', () => {
+            const newTime = Math.max(0, (Math.round(video.currentTime * frameRate) - 1) / frameRate);
+            seekTo(newTime);
+        });
+
+        frameForwardBtn.addEventListener('click', () => {
+            const newTime = Math.min(video.duration, (Math.round(video.currentTime * frameRate) + 1) / frameRate);
+            seekTo(newTime);
+        });
+        
+        function updateSelectionFromPlayhead() {
+            if (!video.duration) return;
+            
+            const minutes = parseInt(minutesInput.value) || 0;
+            const seconds = parseInt(secondsInput.value) || 0;
+            const frames = parseInt(framesInput.value) || 0;
+            const newDuration = minutes * 60 + seconds + (frames / frameRate);
+            
+            let newStart, newEnd;
+            switch (playheadPositionSelect.value) {
+                case 'in':
+                    newStart = video.currentTime;
+                    newEnd = Math.min(video.duration, newStart + newDuration);
+                    break;
+                case 'out':
+                    newEnd = video.currentTime;
+                    newStart = Math.max(0, newEnd - newDuration);
+                    break;
+                case 'mid':
+                    const halfDuration = newDuration / 2;
+                    newStart = Math.max(0, video.currentTime - halfDuration);
+                    newEnd = Math.min(video.duration, video.currentTime + halfDuration);
+                    break;
+            }
+            setSelectionRange(newStart, newEnd);
         }
+        
+        minutesInput.addEventListener('change', updateSelectionFromPlayhead);
+        secondsInput.addEventListener('change', updateSelectionFromPlayhead);
+        framesInput.addEventListener('change', updateSelectionFromPlayhead);
+        playheadPositionSelect.addEventListener('change', updateSelectionFromPlayhead);
 
-        // Process the very last cue if the file didn't end with a blank line
-        if (parsingState === 'looking_for_text' && cue && cueTextLines.length > 0) {
-             let { adjustedStart, adjustedEnd, belongs } = checkAndAdjustCueTime(cue.originalStart, cue.originalEnd, keepSegments);
-             if (belongs && !isNaN(adjustedStart) && !isNaN(adjustedEnd)) {
-                 const adjustedTimeLine = cue.timeLine.replace(timePattern, `${secondsToTime(adjustedStart, type)} --> ${secondsToTime(adjustedEnd, type)}`);
-                 outputLines.push(...cue.headerLines);
-                 outputLines.push(adjustedTimeLine);
-                 outputLines.push(...cueTextLines);
-                 // No final blank line needed if it's the absolute end of the file content
-             }
-        }
+        framerateSelect.addEventListener('change', function() {
+            frameRate = parseFloat(this.value);
+            frameStep = 1 / frameRate;
+            updateTimeDisplays();
+            updateMarkersList();
+            updateFramesInputMax();
+            updateTimelineScale(); // Update timeline scale when framerate changes
+        });
 
+        resetZoomBtn.addEventListener('click', () => {
+            if (video.duration) {
+                setSelectionRange(0, video.duration);
+                seekTo(0);
+            }
+        });
 
-        return outputLines.join('\n');
-    }
+        fileInput.addEventListener('change', e => e.target.files[0] && loadVideo(e.target.files[0]));
+        jsonInput.addEventListener('change', e => e.target.files[0] && handleJSONImport(e.target.files[0]));
+        subtitleFileInput.addEventListener('change', handleSubtitleSelect);
+        
+        searchBox.addEventListener('input', debounce(filterSubtitles, 300));
+        prevMatchButton.addEventListener('click', navigateToPreviousMatch);
+        nextMatchButton.addEventListener('click', navigateToNextMatch);
 
+        applySearchPaddingCheckbox.addEventListener('change', () => {
+            paddingInfoText.style.display = applySearchPaddingCheckbox.checked ? 'inline' : 'none';
+        });
 
-    // Checks if a cue's time range overlaps with any keep segment and calculates adjusted times
-    function checkAndAdjustCueTime(originalStart, originalEnd, keepSegments) {
-        if (isNaN(originalStart) || isNaN(originalEnd)) {
-             console.warn("Invalid original cue times:", originalStart, originalEnd);
-             return { adjustedStart: NaN, adjustedEnd: NaN, belongs: false };
-        }
+        addMarkerBtn.addEventListener('click', window.addMarker);
 
-        let cumulativeDurationBefore = 0;
-        let belongs = false;
-        let firstOverlap = true;
-        let adjustedStart = NaN;
-        let adjustedEnd = NaN;
+        saveJsonBtn.addEventListener('click', async function() {
+            if (!video.duration) {
+                alert('Please load a video first.');
+                return;
+            }
+            
+            if (!audioInfo.samplerate) audioInfo = await detectAudioInfo(video);
+            const customPath = customPathInput.value.trim();
+            if (customPath) saveCustomPath(customPath);
+            const pathUrl = customPath || `C:/Videos/`;
 
-         for (const segment of keepSegments) {
-             const segmentDuration = segment.end - segment.start;
-             if (segmentDuration <= 0) continue; // Skip zero-duration keep segments
-
-             // Calculate overlap range [overlapStart, overlapEnd)
-             const overlapStart = Math.max(originalStart, segment.start);
-             const overlapEnd = Math.min(originalEnd, segment.end);
-
-             // Check if there is a valid overlap (start must be strictly less than end)
-             if (overlapStart < overlapEnd) {
-                 belongs = true;
-
-                 // Calculate times relative to the start of the concatenated output
-                 const startWithinSegment = overlapStart - segment.start;
-                 const endWithinSegment = overlapEnd - segment.start;
-
-                 // Only set adjustedStart based on the *first* segment this cue overlaps with
-                 if (firstOverlap) {
-                     adjustedStart = cumulativeDurationBefore + startWithinSegment;
-                     firstOverlap = false;
-                 }
-                 // Always update adjustedEnd to the end point within the *current* overlapping segment,
-                 // relative to the concatenated timeline. This handles cues spanning removed sections.
-                 adjustedEnd = cumulativeDurationBefore + endWithinSegment;
-
-                // Don't break. A cue might appear again if it spans a removed section.
-                // The logic correctly updates adjustedEnd based on the latest overlapping part.
+            const videoData = {
+                "sequence": { "name": originalFileName.split('.')[0] },
+                "video": {
+                    "file": {
+                        "name": originalFileName, "pathurl": pathUrl + originalFileName,
+                        "media": {
+                            "video": {
+                                "duration": Math.round(video.duration * frameRate),
+                                "timecode": { "rate": { "ntsc": [29.97, 59.94, 23.976].includes(frameRate) ? "TRUE" : "FALSE", "timebase": frameRate }, "displayformat": "NDF", "first_timecode": "00:00:00:00" },
+                                "samplecharacteristics": { "width": video.videoWidth, "height": video.videoHeight, "anamorphic": "FALSE", "pixelaspectratio": "Square" }
+                            },
+                            "audio": {
+                                "samplecharacteristics": { "depth": 16, "samplerate": audioInfo.samplerate.toString() },
+                                "channelcount": audioInfo.channelcount
+                            }
+                        }
+                    }
+                },
+                "clips": markers.map((marker, index) => ({
+                    "id": (index + 1).toString(),
+                    "start": Math.round(marker.start * frameRate),
+                    "end": Math.round(marker.end * frameRate),
+                    "subtitles": marker.subtitles ? marker.subtitles.map(sub => ({
+                        text: sub.text,
+                        start: Math.round(marker.start * frameRate),
+                        end: Math.round(marker.end * frameRate)
+                    })) : []
+                }))
+            };
+            
+            if (subtitles.length > 0 && subtitleFileInput.files.length > 0) {
+                videoData.subtitles = { file: subtitleFileInput.files[0].name, format: subtitleFormat, count: subtitles.length };
+            }
+            
+            // Add the stored waveform data to the export object if it exists
+            if (importedWaveformData) {
+                videoData.waveform = importedWaveformData;
             }
 
-            // Add this keep segment's duration to the cumulative offset for the next segment.
-            cumulativeDurationBefore += segmentDuration;
+            const blob = new Blob([JSON.stringify(videoData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${originalFileName.split('.')[0]}-project.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        // ---------- 14. PATH HANDLING ----------
+        function saveCustomPath(path) {
+            const savedPaths = JSON.parse(localStorage.getItem('customPaths') || '[]');
+            const existingIndex = savedPaths.indexOf(path);
+            if (existingIndex !== -1) savedPaths.splice(existingIndex, 1);
+            savedPaths.unshift(path);
+            if (savedPaths.length > 5) savedPaths.pop();
+            localStorage.setItem('customPaths', JSON.stringify(savedPaths));
+            updatePathDropdown();
+        }
+        
+        savePathBtn.addEventListener('click', () => {
+            const path = customPathInput.value.trim();
+            if (path) saveCustomPath(path);
+        });
+
+        savedPathsSelect.addEventListener('change', function() {
+            if (this.value) customPathInput.value = this.value;
+        });
+        
+        // ---------- 15. DRAG AND DROP HANDLERS ----------
+        dropZone.addEventListener('dragover', handleDragOver);
+        dropZone.addEventListener('dragleave', handleDragLeave);
+        dropZone.addEventListener('drop', handleDrop);
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            document.body.addEventListener(eventName, e => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+        
+        // ---------- 16. VIDEO AND SUBTITLE EVENT LISTENERS ----------
+        video.addEventListener('timeupdate', function() {
+            // Looping logic
+            if (isLooping && video.currentTime >= currentSelection.end) {
+                seekTo(currentSelection.start);
+                video.play();
+                return;
+            }
+
+            updateTimeDisplays();
+            updateCurrentSubtitle();
+        });
+        
+        video.addEventListener('play', () => playPauseBtn.textContent = 'Pause');
+        video.addEventListener('pause', () => playPauseBtn.textContent = 'Play');
+        
+        // ---------- 17. KEYBOARD SHORTCUTS ----------
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+            
+            switch(e.code) {
+                case 'Space': 
+                    e.preventDefault(); 
+                    playPauseBtn.click(); 
+                    break;
+                case 'ArrowLeft': 
+                    if (e.ctrlKey || e.metaKey) { 
+                        e.preventDefault(); 
+                        frameBackBtn.click(); 
+                    } 
+                    break;
+                case 'ArrowRight': 
+                    if (e.ctrlKey || e.metaKey) { 
+                        e.preventDefault(); 
+                        frameForwardBtn.click(); 
+                    } 
+                    break;
+                case 'KeyI': 
+                    e.preventDefault(); 
+                    setInPoint(); 
+                    break;
+                case 'KeyO': 
+                    e.preventDefault(); 
+                    setOutPoint(); 
+                    break;
+                case 'KeyQ': 
+                    e.preventDefault(); 
+                    seekTo(currentSelection.start); 
+                    break;
+                case 'KeyW': 
+                    e.preventDefault(); 
+                    seekTo(currentSelection.end); 
+                    break;
+                case 'KeyT':
+                    e.preventDefault();
+                    const tabs = document.querySelectorAll('[data-bs-toggle="tab"]');
+                    const activeTab = document.querySelector('.nav-link.active');
+                    const activeIndex = Array.from(tabs).indexOf(activeTab);
+                    const nextIndex = (activeIndex + 1) % tabs.length;
+                    tabs[nextIndex].click();
+                    break;
+            }
+        });
+        
+        // ---------- 18. MOBILE OPTIMIZATIONS ----------
+        function initMobileOptimizations() {
+            const isMobile = window.innerWidth <= 768;
+            if (isMobile) {
+                // Adjust waveform zoom for mobile
+                if (wavesurfer && wavesurfer.isReady) {
+                    const pxPerSec = waveformScrollContainer.clientWidth / 15; // More zoom on mobile
+                    wavesurfer.zoom(pxPerSec);
+                }
+            }
+        }
+        
+        // ---------- 19. MEMORY MANAGEMENT ----------
+        window.addEventListener('beforeunload', function() {
+            if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
+            if (wavesurfer) wavesurfer.destroy();
+            if (audioContext && audioContext.state !== 'closed') audioContext.close();
+        });
+        
+        // ---------- 20. INITIALIZATION ----------
+        function initializeApp() {
+            updatePathDropdown();
+        
+            const addSearchMarkersBtn = document.getElementById('add-search-markers');
+            if (addSearchMarkersBtn) {
+                addSearchMarkersBtn.removeEventListener('click', addSearchResultsAsMarkers);
+                addSearchMarkersBtn.addEventListener('click', addSearchResultsAsMarkers);
+            }
+        
+            updateFramesInputMax();
+            setupVideoFocusHandling();
+            initMobileOptimizations();
+        
+            window.addEventListener('resize', debounce(function() {
+                if (video.duration) {
+                    updateTimeDisplays();
+                    updateTimelineScale();
+                }
+                initMobileOptimizations();
+                if (wavesurfer && wavesurfer.isReady) {
+                    const pxPerSec = waveformScrollContainer.clientWidth / (window.innerWidth <= 768 ? 15 : 10);
+                    wavesurfer.zoom(pxPerSec);
+                }
+            }, 250));
         }
 
-         // Post-processing checks
-         if (belongs) {
-              // Ensure end time is strictly greater than start time
-              if (adjustedEnd <= adjustedStart) {
-                 // If they are equal or inverted due to precision, add a minimal duration (e.g., 1ms)
-                 adjustedEnd = adjustedStart + 0.001;
-                 console.warn(`Adjusted cue end time <= start time. Setting minimal duration. Original: ${originalStart}-${originalEnd}, Adjusted: ${adjustedStart}-${adjustedEnd}`);
-              }
-         } else {
-             // If it never overlapped, ensure times are NaN
-             adjustedStart = NaN;
-             adjustedEnd = NaN;
-         }
-
-
-        return { originalStart, originalEnd, adjustedStart, adjustedEnd, belongs };
-    }
-
-    // Initialize FFmpeg
-    loadFFmpeg();
-}
+        initializeApp();
+    });
+});
