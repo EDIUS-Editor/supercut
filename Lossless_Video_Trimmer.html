@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lossless Video Trimmer (via ffmpeg.wasm)</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- IMPORTANT: For SharedArrayBuffer support (performance) -->
+    <!-- You might need to serve this page from a server that sets these headers -->
+    <!--
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    -->
+</head>
+<body>
+    <div class="container">
+        <h1>Lossless Video Trimmer</h1>
+        <p class="description">
+            Upload an MP4 video and a JSON file defining segments. Choose to keep or remove these segments.
+            The video will be processed losslessly (no re-encoding) using ffmpeg.wasm.
+            Optionally, upload a VTT/SRT subtitle file to process alongside the video.
+        </p>
+
+        <div class="input-group">
+            <label for="videoFile">1. Upload Video (MP4):</label>
+            <input type="file" id="videoFile" accept="video/mp4">
+        </div>
+
+        <div class="input-group">
+            <label for="jsonFile">2. Upload Edit JSON:</label>
+            <input type="file" id="jsonFile" accept=".json,application/json">
+            <small>JSON should contain a `clips` array with `start` and `end` frames, and video `duration` frame count and `timebase` under `video.media.video`.</small>
+            <a href="example_edits.json" download="example_edits.json">Download Example JSON</a>
+        </div>
+
+        <div class="input-group">
+             <label for="subtitleFile">3. (Optional) Upload Subtitles (VTT/SRT):</label>
+             <input type="file" id="subtitleFile" accept=".vtt,.srt">
+        </div>
+
+        <div class="input-group">
+            <label>4. Processing Mode:</label>
+            <div class="radio-group">
+                <input type="radio" id="modeKeep" name="mode" value="keep" checked>
+                <label for="modeKeep">Keep selected segments</label>
+                <input type="radio" id="modeRemove" name="mode" value="remove">
+                <label for="modeRemove">Remove selected segments</label>
+            </div>
+        </div>
+
+        <button id="processButton" disabled>Load Files First</button>
+
+        <div id="status">
+            <p>Status: Waiting for files...</p>
+            <progress id="progressBar" value="0" max="100" style="width: 100%; display: none;"></progress>
+        </div>
+
+        <div id="downloadArea" style="margin-top: 20px;">
+            <!-- Download links will appear here -->
+        </div>
+         <div id="ffmpeg-log" class="log-box">
+             <h2>FFmpeg Log</h2>
+             <pre></pre>
+         </div>
+    </div>
+
+    <!-- Load ffmpeg.wasm -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+    
+    <!-- Add this small script to ensure FFmpeg is loaded before your main script -->
+    <script>
+        // Check if FFmpeg loaded correctly
+        window.addEventListener('load', function() {
+            console.log("Window loaded, FFmpeg object:", typeof FFmpeg);
+            if (typeof FFmpeg === 'undefined') {
+                console.error("FFmpeg failed to load properly. Trying alternative CDN...");
+                // Create a fallback script element
+                var fallbackScript = document.createElement('script');
+                fallbackScript.src = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js";
+                fallbackScript.onload = function() {
+                    console.log("Fallback FFmpeg loaded!");
+                    // Now load your script
+                    var mainScript = document.createElement('script');
+                    mainScript.src = "script.js";
+                    document.body.appendChild(mainScript);
+                };
+                document.body.appendChild(fallbackScript);
+            }
+        });
+    </script>
+    
+    <!-- Load your script with defer attribute -->
+    <script src="script.js" defer></script>
+</body>
+</html>
